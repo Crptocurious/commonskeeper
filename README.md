@@ -8,7 +8,7 @@ Renewable Lake with logistic growth and collapse mechanics
 
 Multiple AI agents (Greedy, Random, Rule‑based Sustainable) with path‑finding & unique behaviour
 
-LLM‑augmented brains (GPT‑4o via AutoGen/CrewAI) or pure TypeScript heuristics
+Simple rule-based agent behaviors with customizable response patterns
 
 Chat bubbles & global chat feed for agent speech
 
@@ -26,23 +26,7 @@ cd commons-keeper
 bun install
 ```
 
-2  Environment variables
-
-Agents call OpenAI for reasoning.  Create a .env at project root:
-
-```
-OPENAI_API_KEY=your_openai_api_key_here
-```
-
-You can copy the example:
-
-```bash
-cp .env.example .env
-```
-
-Note: GPT‑4o access is required.
-
-3  Run the demo
+2  Run the demo
 
 ```bash
 bun --watch index.ts    # opens http://localhost:8080
@@ -52,7 +36,7 @@ Join as a player and watch the fishers negotiate (or not!).
 
 🤖 How do agents work?
 
-Agents combine world‑state snapshots, game actions, and LLM prompts.
+Agents combine world‑state snapshots and game actions to make decisions.
 
 World‑state representation
 
@@ -63,7 +47,7 @@ Each tick, an agent receives:
 * Inventory contents
 * Status of any ongoing actions
 
-This object is stringified and prepended to the LLM prompt.  See `src/BaseAgent.ts#getCurrentState()` for details.
+This object is used to determine the agent's next action. See `src/BaseAgent.ts#getCurrentState()` for details.
 
 Actions
 
@@ -75,9 +59,9 @@ Agents express intent by outputting XML tags that the game parses:
 <action type="speak">Let's stick to 5 fish each!</action>
 ```
 
-Why XML? It is small, language‑model‑friendly, and easy to regex out of natural text.
+Why XML? It is small, structured, and easy to parse out of text responses.
 
-Large Language Models
+Agent Responses
 
 Two trigger styles are demonstrated:
 
@@ -89,8 +73,6 @@ Scale from 1 → 100 agents without flooding chat by tweaking the step interval.
 📊 Core research questions
 
 * Can self‑interested agents find harvesting norms that keep the lake alive?
-* Does higher reasoning power increase selfishness?
-* Does chat + reasoning improve governance?
 * Which incentives (tax, spoilage, trade) raise cooperative equilibrium?
 
 Run headless sims via:

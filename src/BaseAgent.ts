@@ -12,8 +12,6 @@ import {
 	SceneUI,
 	PlayerEntity,
 } from "hytopia";
-import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/src/resources/index.js";
 
 /**
  * This is the interface that all behaviors must implement.
@@ -56,24 +54,17 @@ export interface InventoryItem {
 
 export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
-	private chatHistory: ChatCompletionMessageParam[] = [];
-	private openai: OpenAI;
+	private chatHistory: { role: string; content: string }[] = [];
 	private systemPrompt: string;
-
-	// Stores hidden chain-of-thought - in this demo, we show these to the players. You might not need or want this!
 	private internalMonologue: string[] = [];
-
 	private pendingAgentResponse?: {
 		timeoutId: ReturnType<typeof setTimeout>;
 		options: ChatOptions;
 	};
-
 	private lastActionTime: number = Date.now();
 	private inactivityCheckInterval?: ReturnType<typeof setInterval>;
 	private readonly INACTIVITY_THRESHOLD = 30000; // 30 seconds in milliseconds
-
 	private chatUI: SceneUI;
-
 	private inventory: Map<string, InventoryItem> = new Map();
 
 	constructor(options: { name?: string; systemPrompt: string }) {
@@ -92,11 +83,7 @@ export class BaseAgent extends Entity {
 		this.on(EntityEvent.TICK, this.onTickBehavior);
 
 		this.systemPrompt = options.systemPrompt;
-		this.openai = new OpenAI({
-			baseURL: "https://api.deepinfra.com/v1/openai/",
-			apiKey: process.env.OPENAI_API_KEY,
-		});
-		
+
 		// Start inactivity checker when agent is created
 		this.inactivityCheckInterval = setInterval(() => {
 			const timeSinceLastAction = Date.now() - this.lastActionTime;
@@ -261,21 +248,10 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 	}
 
 	private async processChatMessage(options: ChatOptions) {
-		const { type, message, player, agent } = options;
 		try {
-			if (this.chatHistory.length === 0) {
-				this.chatHistory.push({
-					role: "system",
-					content: this.buildSystemPrompt(this.systemPrompt),
-				});
-			}
-
+			const { type, message, player, agent } = options;
 			const currentState = this.getCurrentState();
-			const nearbyEntities = this.getNearbyEntities().map((e) => ({
-				name: e.name,
-				type: e.type,
-				state: e instanceof BaseAgent ? e.getCurrentState() : undefined,
-			}));
+			const nearbyEntities = this.getNearbyEntities();
 
 			let prefix = "";
 			if (type === "Environment") prefix = "ENVIRONMENT: ";
@@ -290,26 +266,62 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 
 			this.chatHistory.push({ role: "user", content: userMessage });
 
-			const completion = await this.openai.chat.completions.create({
-				model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
-				messages: this.chatHistory,
-				temperature: 0.7,
-			});
+			// Rule-based response system
+			let responseContent = "";
+			
+			// Process environment triggers
+			if (type === "Environment") {
+				if (message.includes("inactive")) {
+					// Check if we're near any interesting entities
+					const nearbyPlayers = nearbyEntities.filter(e => e.type === "Player");
+					const nearbyAgents = nearbyEntities.filter(e => e.type === "Agent");
+					
+					if (nearbyPlayers.length > 0) {
+						responseContent = `<monologue>I notice ${nearbyPlayers.length} player(s) nearby. I should interact with them.</monologue>\n<action type="speak">{"message": "Hello there! How's the fishing today?"}</action>`;
+					} else if (currentState.FishingBehavior?.includes("Not fishing")) {
+						const PIER_LOCATION = { x: 31.5, y: 3, z: 59.5 };
+						responseContent = `<monologue>I should try to catch some fish.</monologue>\n<action type="pathfindTo">{"coordinates": ${JSON.stringify(PIER_LOCATION)}}</action>`;
+					}
+				} else if (message.includes("arrived at your destination")) {
+					if (currentState.FishingBehavior?.includes("Not fishing")) {
+						responseContent = `<monologue>Now that I'm at the pier, I should start fishing.</monologue>\n<action type="cast_rod"></action>`;
+					} else {
+						responseContent = `<monologue>I've arrived at my destination.</monologue>`;
+					}
+				}
+			}
+			// Process player interactions
+			else if (type === "Player") {
+				const lowerMessage = message.toLowerCase();
+				if (lowerMessage.includes("fish") || lowerMessage.includes("fishing")) {
+					responseContent = `<monologue>Player is asking about fishing. I'll share my experience.</monologue>\n<action type="speak">{"message": "The lake's been quite generous today. Remember to fish responsibly!"}</action>`;
+				} else if (lowerMessage.includes("hello") || lowerMessage.includes("hi")) {
+					responseContent = `<monologue>Friendly greeting from a player. I should respond.</monologue>\n<action type="speak">{"message": "Hello! Nice to meet you."}</action>`;
+				}
+			}
+			// Process agent interactions
+			else if (type === "Agent") {
+				responseContent = `<monologue>Another agent is ${message.toLowerCase()}. I'll make note of that.</monologue>`;
+			}
 
-			const response = completion.choices[0]?.message;
-			if (!response || !response.content) return;
+			// Default response if no specific rule matched
+			if (!responseContent) {
+				responseContent = `<monologue>Acknowledging the message: ${message}</monologue>\n<action type="acknowledge"></action>`;
+			}
+
+			const response = {
+				role: "assistant",
+				content: responseContent
+			};
 
 			console.log("Response:", response.content);
 
 			this.parseXmlResponse(response.content);
 
 			// Keep the assistant's text in chat history
-			this.chatHistory.push({
-				role: "assistant",
-				content: response.content || "",
-			});
+			this.chatHistory.push(response);
 		} catch (error) {
-			console.error("OpenAI API error:", error);
+			console.error("Chat processing error:", error);
 		}
 	}
 
@@ -356,16 +368,14 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 		const actionRegex = /<action\s+type="([^"]+)">([\s\S]*?)<\/action>/g;
 		let actionMatch;
 		while ((actionMatch = actionRegex.exec(text)) !== null) {
-			const actionType = actionMatch[1];
-			const actionBody = actionMatch[2]?.trim();
+			const actionType = actionMatch[1] || "";
+			if (!actionType) continue; // Skip if no action type
+			
+			const actionBody = actionMatch[2]?.trim() || "{}";
 			try {
 				console.log("Action:", actionType, actionBody);
-				if (!actionBody || actionBody === "{}") {
-					this.handleToolCall(actionType, {});
-				} else {
-					const parsed = JSON.parse(actionBody);
-					this.handleToolCall(actionType, parsed);
-				}
+				const parsed = actionBody === "{}" ? {} : JSON.parse(actionBody);
+				this.handleToolCall(actionType, parsed);
 				this.lastActionTime = Date.now(); // Update last action time
 			} catch (e) {
 				console.error(`Failed to parse action ${actionType}:`, e);
