@@ -1,64 +1,113 @@
-# Hytopia Multi Agent Demo
+Commons Keeper – Tragedy of the Commons Demo
 
-This demo codebase provides an example for building multi Agent AI systems in Hytopia. The server has the following features:
-- Multiple AI agents with unique pathfinding, behaviour and capabilities
-- Chat bubbles for agent speech
-- Side bar UI for viewing Agent actions
+This repository shows how to build a multi‑agent, resource‑sharing world with the [HYTOPIA SDK]. A society of AI fishers must harvest just enough fish each day to keep the lake alive for tomorrow. Use it as a starting point for research on cooperation, governance and emergent norms.
 
-## Setup
+✨ Features
 
-### Environment Variables
-This demo requires an OpenAI API key to function. Create a `.env` file in the ai-agents directory with the following variables:
+Renewable Lake with logistic growth and collapse mechanics
 
-```env
+Multiple AI agents (Greedy, Random, Rule‑based Sustainable) with path‑finding & unique behaviour
+
+LLM‑augmented brains (GPT‑4o via AutoGen/CrewAI) or pure TypeScript heuristics
+
+Chat bubbles & global chat feed for agent speech
+
+Sidebar UI showing real‑time agent actions, energy & inventory
+
+JSONL logging for sustainability, efficiency & inequality metrics
+
+🚀 Setup
+
+1  Clone & install
+
+```bash
+bunx hytopia init --template ai-agents commons-keeper
+cd commons-keeper
+bun install
+```
+
+2  Environment variables
+
+Agents call OpenAI for reasoning.  Create a .env at project root:
+
+```
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-You can copy the `.env.example` file and fill in your API key:
+You can copy the example:
+
 ```bash
-cd examples/ai-agents
 cp .env.example .env
 ```
 
-The OpenAI API key is used for agent inference - the agents use GPT-4o to make decisions and respond to interactions. Make sure your OpenAI account has access to GPT-4o API.
+Note: GPT‑4o access is required.
 
-## How do Agents work in Hytopia?
-Game Agents are driven by a combination of game-specific action logic, world state representation, and Large Language Models.
+3  Run the demo
 
-At a high level, to integrate agents into your game, you need to think about these three pieces.
+```bash
+bun --watch index.ts    # opens http://localhost:8080
+```
 
-### World State Representation
-Your Agents need to know what is going on in the game. Where are they? What is around them? etc..
-In this demo, the following data is available in the Agent's personal state:
-- Their location
-- Entities around them
-- The status of any ongoing actions ("Behaviors")
-- Items in their inventory
+Join as a player and watch the fishers negotiate (or not!).
 
-For more information on this, see the [`getCurrentState()`](src/BaseAgent.ts#L205) function in BaseAgent. Each behavior returns their Agent-specific state as a string, which we group together into an object and stringify it for the Agent's prompt.
-States are prepended to each prompt to the agent.
+🤖 How do agents work?
 
-### Actions
-Actions are things that people and agents do in your game. In this simple demo, the things people do are simple: they go places, they say things, and some of them do profession-specific tasks like Fishing and Mining.
+Agents combine world‑state snapshots, game actions, and LLM prompts.
 
-Going places means going to specific locations (by coordinates), or going to a person or thing (by name). This means Bob can go to Jim, without knowing where Jim is. Bob might also decide to go to the Pier, since Jim is a Fisherman and one would expect the town fisherman to be at the pier.
+World‑state representation
 
-Saying things is simple, but the weeds of what that means is also game specific. In this demo, when agents speak, other agents can hear them in close proximity, but for the sake of the demo we also show their messages globally in chat. Speaking also spawns a chat bubble UI template. See the [`agent-chat template`](assets/ui/index.html#L178) for more info on this.
+Each tick, an agent receives:
 
-Actions also interact with LLMs. Since actions are called by the LLM, we need to show the LLM how to call them.
-Some agent frameworks use tool calling/function calling, which is very popular with OpenAI.
-You can do this if you want, but I prefer XML. XML takes less output tokens, is very natural for LLMs to write (billions of html pages parsed). Most importantly, valid XML can be easily regexed out of any text, intermingled with other thoughts from the LLM. Many benchmarks show creativity in language models decreasing as output format is increasingly restricted.
+* Its own position & energy
+* Nearby entities (fishers, lake)
+* Inventory contents
+* Status of any ongoing actions
 
-In this demo, an action can be called by an LLM simply by outputting text like this:
-`<action type="speak">...</action>`
+This object is stringified and prepended to the LLM prompt.  See `src/BaseAgent.ts#getCurrentState()` for details.
 
-Another benefit of this approach is that models with very little infrastructure around their APIs can all output valid XML, so you can easily use whatever model or provider you want.
+Actions
 
-### Large Language Models
-LLM's act as a router and brain for the agent, converting state representations and inputs into a sequence of actions.
-LLM's need to be prompted. You will not get a spontaneous output without an input. In a game, this means you need to decide when Agent's make decisions. In this demo I show two common techniques:
-- Response Triggers: when a Player speaks to an Agent, they will respond immediately. This lets players have some immediate control over influencing agent behaviours, and makes it easy to test your prompts with quick feedback. This is best for smaller player counts.
-- Game Steps: as you can imagine, the above response triggers will not work at scale. Imagine 100 players in an area all talking to the same agent. You would not want it to respond outloud to everyone in the area. Instead, you can take a page out of the playbook of turn-based strategy games. Divide your game time into turns (a step could be every 5 seconds, 10 seconds, whatever you want), and each turn, you trigger each agent with the new state since their last turn. Players don't need to be limited by turns, but this makes your agents a bit simpler to manage. You can see an example of how this works in the idle detection of the agents in this repo. If an agent has not been triggered by a player in the last 30 seconds, they wake up and can decide what to do next.
+Agents express intent by outputting XML tags that the game parses:
 
-## What's next?
-We want to continue to make AI Agents accessible for developers of Hytopia games. This means more game-specific demos, more tooling, and a standardized Agent implementation that you can import as a plugin into your games. More on this soon :)
+```xml
+<action type="move" target="Lake" />
+<action type="fish" amount="5" />
+<action type="speak">Let's stick to 5 fish each!</action>
+```
+
+Why XML? It is small, language‑model‑friendly, and easy to regex out of natural text.
+
+Large Language Models
+
+Two trigger styles are demonstrated:
+
+* Response Triggers – instant reply when a player talks to an agent.
+* Game Steps – every 30 s idle, the agent wakes up to plan its next move.
+
+Scale from 1 → 100 agents without flooding chat by tweaking the step interval.
+
+📊 Core research questions
+
+* Can self‑interested agents find harvesting norms that keep the lake alive?
+* Does higher reasoning power increase selfishness?
+* Does chat + reasoning improve governance?
+* Which incentives (tax, spoilage, trade) raise cooperative equilibrium?
+
+Run headless sims via:
+
+```bash
+bun run scripts/run-local.ts --ticks 1000 --agents 5 --policy greedy
+```
+
+Logs land in `experiments/<run‑id>/events.jsonl` and can be analysed in DuckDB / Pandas.
+
+🔭 What's next?
+
+* Self‑play PPO to learn quotas automatically
+* Punishment & tax mechanics for institutional enforcement
+* Trading post economy (fish ↔ coins) to study inequality
+* Superset dashboards for live lake curves & Gini graphs
+
+🪪 License
+
+MIT.  Built with ❤️ on the HYTOPIA SDK.
