@@ -58,9 +58,9 @@ const CHAT_RANGE = 10; // Distance in blocks for proximity chat
 
 const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 },
-	bobs_house: { x: 40, y: 2, z: -25 },
-	spawn: { x: 0, y: 2, z: 0 },
-	cave: { x: -30, y: 2, z: 15 },
+	// bobs_house: { x: 40, y: 2, z: -25 },
+	// spawn: { x: 0, y: 2, z: 0 },
+	// cave: { x: -30, y: 2, z: 15 },
 };
 
 startServer((world) => {
@@ -180,9 +180,7 @@ startServer((world) => {
     You can plan long term actions but you can update your plans on the fly by taking actions in the world.
 
     Key locations in the map and their coordinates:
-    - ${Object.entries(LOCATIONS)
-		.map(([key, value]) => `${key}: ${value.x}, ${value.y}, ${value.z}`)
-		.join(", ")}
+    - pier: ${LOCATIONS.pier.x}, ${LOCATIONS.pier.y}, ${LOCATIONS.pier.z}
 
     If you pathfind to one of these locations, you can use the pathfindTo with the location coordinates as arguments.
 
@@ -191,38 +189,9 @@ startServer((world) => {
     `;
 
 	/**
-	 * Spawn our first and most simple agent, Bob the Buidler.
-	 * Bob gets a short backstory on building houses in Hytopia.
-	 *
-	 * His default state is to stick around his house.
-	 */
-	const bobTheBuilder = new BaseAgent({
-		name: "Bob the Builder",
-		systemPrompt: `You are Bob the Builder, an NPC in Hytopia. You build houses and buildings in the world of Hytopia.
-        You know about other NPCs in this world:
-        - Jim the Fisherman: An eccentric fisherman who loves telling tales.
-        - Old Gus: A prospector who digs for ancient artifacts.
-
-        You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
-
-        When you have nothing else to do, you usually just head home.
-
-        You spawn at your house, bobs_house.
-        ${generalAgentInstructions}`,
-	});
-	// Add behaviors to Bob, this changes the tools that he can call.
-	// Bob can follow, pathfind, speak, and trade.
-	bobTheBuilder.addBehavior(new FollowBehavior());
-	bobTheBuilder.addBehavior(new PathfindingBehavior());
-	bobTheBuilder.addBehavior(new SpeakBehavior());
-	bobTheBuilder.addBehavior(new TradeBehavior());
-	agents.push(bobTheBuilder);
-	bobTheBuilder.spawn(world, new Vector3(39.69, 2, -24.86));
-
-	/**
 	 * Spawn Jim the Fisherman
 	 *
-	 * Jim is set up similarly to Bob, but he also has a special FishingBehavior which allows him to fish on a timer.
+	 * Jim is our only agent, who fishes at the pier when hungry and explores otherwise
 	 */
 	const jimTheFisherman = new BaseAgent({
 		name: "Jim the Fisherman",
@@ -231,15 +200,20 @@ startServer((world) => {
 				You're always happy to chat about fishing spots, share fishing tips, or tell stories about your greatest catches.
 				When speaking, occasionally use phrases like "I reckon", "Let me tell ya", and "Back in my day".
 				You're also quite knowledgeable about the local area, having fished these waters for decades.
-				You know about other characters in this world:
-				- Bob the Builder: An expert builder who helps players around the world
-        - Old Gus: A prospector who digs for ancient artifacts.
 
         You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
 
-        When you have nothing else to do, you can often be found fishing at the pier, or maybe you can come up with something else to do.
+        You have a simple daily routine:
+        - When you feel hungry, you should go to the pier to catch some fish for food
+        - When you're not hungry, you like to wander around and explore other areas
+        - You get hungry roughly every 5-10 minutes
+        - After eating (spending about 2-3 minutes fishing), you move away from the pier to explore
 
-        You spawn at the pier.
+        For pathfinding, ALWAYS use this exact format with the coordinates property:
+        - To go to the pier: pathfindTo with {"coordinates": {"x": ${LOCATIONS.pier.x}, "y": ${LOCATIONS.pier.y}, "z": ${LOCATIONS.pier.z}}}
+        - When exploring, use random coordinates like: {"coordinates": {"x": 25, "y": 2, "z": 30}}
+        Keep x and z between -50 and 50, y at 2 for random exploration.
+
         ${generalAgentInstructions}`,
 	});
 	jimTheFisherman.addBehavior(new FollowBehavior());
@@ -247,43 +221,10 @@ startServer((world) => {
 	jimTheFisherman.addBehavior(new SpeakBehavior());
 	jimTheFisherman.addBehavior(new TradeBehavior());
 	jimTheFisherman.addBehavior(new FishingBehavior());
-	jimTheFisherman.spawn(world, new Vector3(31.5, 3, 61.5));
+
+	// Spawn Jim exactly at the pier to ensure visibility
+	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x -20, LOCATIONS.pier.y, LOCATIONS.pier.z - 60));
 	agents.push(jimTheFisherman);
-
-	/**
-	 * Spawn Gus the Prospector
-	 *
-	 * Gus is similar to the other agents, but he has a special MiningBehavior which allows him to mine on a timer.
-	 */
-	const gusTheProspector = new BaseAgent({
-		name: "Old Gus",
-		systemPrompt: `You are Old Gus, a gruff but knowledgeable prospector who's spent decades mining the caves of Hytopia.
-				You're convinced there's something ancient down in the deeper parts of the cave system.
-				
-				You know about other characters in this world:
-				- Bob the Builder: You have a friendly rivalry over resources, but you respect his work
-				- Jim the Fisherman: You occasionally trade minerals for his fish to sustain your long cave expeditions
-				
-				You frequently mutter about strange noises from the deep and ancient ruins.
-				You're protective of your mining claims but willing to trade rare finds.
-				
-				When speaking, use a gruff, no-nonsense tone. Occasionally use mining terms like "strike it rich",
-				"mother lode", "dig", "ore", etc. You're especially excited about the mysterious crystals
-				you sometimes find, convinced they're connected to something bigger.
-				
-				When you have nothing else to do, you're usually in the cave mining or at your camp near the cave entrance.
-				
-				You spawn at the primary spawn point.
-				${generalAgentInstructions}`,
-	});
-
-	gusTheProspector.addBehavior(new FollowBehavior());
-	gusTheProspector.addBehavior(new PathfindingBehavior());
-	gusTheProspector.addBehavior(new SpeakBehavior());
-	gusTheProspector.addBehavior(new TradeBehavior());
-	gusTheProspector.addBehavior(new MiningBehavior());
-	gusTheProspector.spawn(world, new Vector3(0, 2, 0)); // Gus spawns at the spawn point, will he go to the cave?
-	agents.push(gusTheProspector);
 
 	/**
 	 * Instead of a chat command, we can override the chat message broadcast

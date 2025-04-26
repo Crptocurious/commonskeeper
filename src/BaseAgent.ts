@@ -12,8 +12,8 @@ import {
 	SceneUI,
 	PlayerEntity,
 } from "hytopia";
-// import OpenAI from "openai";
-// import type { ChatCompletionMessageParam } from "openai/src/resources/index.js";
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/src/resources/index.js";
 
 /**
  * This is the interface that all behaviors must implement.
@@ -56,8 +56,8 @@ export interface InventoryItem {
 
 export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
-	private chatHistory: /*ChatCompletionMessageParam[]*/ any[] = []; // Use 'any' temporarily
-	// private openai: OpenAI;
+	private chatHistory: ChatCompletionMessageParam[] = [];
+	private openai: OpenAI;
 	private systemPrompt: string;
 
 	// Stores hidden chain-of-thought - in this demo, we show these to the players. You might not need or want this!
@@ -92,9 +92,10 @@ export class BaseAgent extends Entity {
 		this.on(EntityEvent.TICK, this.onTickBehavior);
 
 		this.systemPrompt = options.systemPrompt;
-		// this.openai = new OpenAI({
-		// 	apiKey: process.env.OPENAI_API_KEY,
-		// });
+		this.openai = new OpenAI({
+			baseURL: "https://api.deepinfra.com/v1/openai/",
+			apiKey: process.env.OPENAI_API_KEY,
+		});
 		
 		// Start inactivity checker when agent is created
 		this.inactivityCheckInterval = setInterval(() => {
@@ -262,93 +263,53 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 	private async processChatMessage(options: ChatOptions) {
 		const { type, message, player, agent } = options;
 		try {
-			// Temporarily skip OpenAI interaction if chatHistory is empty
 			if (this.chatHistory.length === 0) {
-				console.log("Skipping initial chat processing as OpenAI is disabled.");
 				this.chatHistory.push({
 					role: "system",
 					content: this.buildSystemPrompt(this.systemPrompt),
 				});
-				// return; // Optionally return here if no further processing is needed without OpenAI
 			}
 
-			let role: "user" | "assistant" | "system" = "user";
-			let content = "";
-			let name = "";
-
-			if (type === "Player" && player) {
-				role = "user";
-				content = message;
-				name = player.username;
-			} else if (type === "Agent" && agent) {
-				role = "assistant";
-				content = message; // Might need processing to remove <monologue> etc. if it comes from agent history
-				name = agent.name;
-			} else if (type === "Environment") {
-				role = "user"; // Environment triggers are treated as user input for the LLM
-				content = message;
-				name = "Environment"; // Or maybe leave undefined? Needs consideration.
-			} else {
-				console.warn("Unhandled chat message type:", type);
-				return; // Don't proceed if the type isn't handled
-			}
-
-			this.chatHistory.push({ role, content, name });
-
-			const nearbyEntities = this.getNearbyEntities();
 			const currentState = this.getCurrentState();
+			const nearbyEntities = this.getNearbyEntities().map((e) => ({
+				name: e.name,
+				type: e.type,
+				state: e instanceof BaseAgent ? e.getCurrentState() : undefined,
+			}));
 
-			const stateContent = `Nearby Entities:
-${JSON.stringify(
-				nearbyEntities
-			)}
-Current State:
-${JSON.stringify(currentState)}`;
-			this.chatHistory.push({ role: "user", content: stateContent, name: "SystemInfo" });
+			let prefix = "";
+			if (type === "Environment") prefix = "ENVIRONMENT: ";
+			else if (type === "Player" && player)
+				prefix = `[${player.username}]: `;
+			else if (type === "Agent" && agent)
+				prefix = `[${agent.name} (AI)]: `;
 
+			const userMessage = `${prefix}${message}\nState: ${JSON.stringify(
+				currentState
+			)}\nNearby: ${JSON.stringify(nearbyEntities)}`;
 
-			console.log("---- Agent Turn ----");
-			console.log("Chat History:", this.chatHistory);
-			console.log("System Prompt:", this.buildSystemPrompt(this.systemPrompt));
-			console.log("Nearby Entities:", nearbyEntities);
-			console.log("Current State:", currentState);
+			this.chatHistory.push({ role: "user", content: userMessage });
 
+			const completion = await this.openai.chat.completions.create({
+				model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+				messages: this.chatHistory,
+				temperature: 0.7,
+			});
 
-			// --- Temporarily disabling OpenAI Call ---
-			console.warn("OpenAI call disabled in BaseAgent.processChatMessage");
-			const mockResponse = "<monologue>OpenAI is disabled. Defaulting to no action.</monologue>"; 
-			// const completion = await this.openai.chat.completions.create({
-			// 	messages: this.chatHistory,
-			// 	model: "gpt-4-turbo",
-			// });
-			// const response = completion.choices[0].message?.content;
-			// --- End of disabled OpenAI Call ---
+			const response = completion.choices[0]?.message;
+			if (!response || !response.content) return;
 
-			// if (!response) {
-			if (!mockResponse) { // Use the mock response for now
-				console.error("No response from OpenAI.");
-				return;
-			}
-			
-			// Add the mock/real response to history
-			this.chatHistory.push({ role: "assistant", content: mockResponse }); // Use mockResponse
+			console.log("Response:", response.content);
 
-			// Limit history size
-			if (this.chatHistory.length > 20) {
-				// Keep system prompt, remove oldest non-system messages
-				this.chatHistory.splice(
-					1,
-					this.chatHistory.length - 20
-				);
-			}
+			this.parseXmlResponse(response.content);
 
-			// Parse and execute actions from the response
-			// this.parseXmlResponse(response);
-			this.parseXmlResponse(mockResponse); // Parse the mock response
-
-
+			// Keep the assistant's text in chat history
+			this.chatHistory.push({
+				role: "assistant",
+				content: response.content || "",
+			});
 		} catch (error) {
-			console.error("Error processing chat message:", error);
+			console.error("OpenAI API error:", error);
 		}
 	}
 
