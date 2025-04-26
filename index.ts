@@ -34,13 +34,10 @@ import {
 } from "hytopia";
 
 import worldMap from "./assets/map.json";
-import { FollowBehavior } from "./src/behaviors/FollowBehavior";
 import { BaseAgent } from "./src/BaseAgent";
 import { PathfindingBehavior } from "./src/behaviors/PathfindingBehavior";
-import { SpeakBehavior } from "./src/behaviors/SpeakBehavior";
-import { TradeBehavior } from "./src/behaviors/TradeBehavior";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
-import { MiningBehavior } from "./src/behaviors/MiningBehavior";
+
 
 /**
  * startServer is always the entry point for our game.
@@ -54,13 +51,9 @@ import { MiningBehavior } from "./src/behaviors/MiningBehavior";
 
 // Store agents globally
 const agents: BaseAgent[] = [];
-const CHAT_RANGE = 10; // Distance in blocks for proximity chat
 
 const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 },
-	// bobs_house: { x: 40, y: 2, z: -25 },
-	// spawn: { x: 0, y: 2, z: 0 },
-	// cave: { x: -30, y: 2, z: 15 },
 };
 
 startServer((world) => {
@@ -180,7 +173,9 @@ startServer((world) => {
     You can plan long term actions but you can update your plans on the fly by taking actions in the world.
 
     Key locations in the map and their coordinates:
-    - pier: ${LOCATIONS.pier.x}, ${LOCATIONS.pier.y}, ${LOCATIONS.pier.z}
+    ${Object.entries(LOCATIONS).map(([name, coords]) => 
+        `- ${name}: ${coords.x}, ${coords.y}, ${coords.z}`
+    ).join('\n    ')}
 
     If you pathfind to one of these locations, you can use the pathfindTo with the location coordinates as arguments.
 
@@ -204,10 +199,7 @@ startServer((world) => {
         You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
 
         You have a simple daily routine:
-        - When you feel hungry, you should go to the pier to catch some fish for food
-        - When you're not hungry, you like to wander around and explore other areas
-        - You get hungry roughly every 5-10 minutes
-        - After eating (spending about 2-3 minutes fishing), you move away from the pier to explore
+        - To catch some fish for food at pier
 
         For pathfinding, ALWAYS use this exact format with the coordinates property:
         - To go to the pier: pathfindTo with {"coordinates": {"x": ${LOCATIONS.pier.x}, "y": ${LOCATIONS.pier.y}, "z": ${LOCATIONS.pier.z}}}
@@ -216,11 +208,9 @@ startServer((world) => {
 
         ${generalAgentInstructions}`,
 	});
-	jimTheFisherman.addBehavior(new FollowBehavior());
+	
 	jimTheFisherman.addBehavior(new PathfindingBehavior());
-	jimTheFisherman.addBehavior(new SpeakBehavior());
-	jimTheFisherman.addBehavior(new TradeBehavior());
-	jimTheFisherman.addBehavior(new FishingBehavior());
+	jimTheFisherman.addBehavior(new FishingBehavior(world));
 
 	// Spawn Jim exactly at the pier to ensure visibility
 	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x -20, LOCATIONS.pier.y, LOCATIONS.pier.z - 60));
