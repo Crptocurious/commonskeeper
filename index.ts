@@ -26,8 +26,6 @@
 import {
 	startServer,
 	Audio,
-	ChatEvent,
-	Player,
 	PlayerEntity,
 	PlayerEvent,
 	Vector3,
@@ -35,9 +33,7 @@ import {
 
 import worldMap from "./assets/map.json";
 import { BaseAgent } from "./src/BaseAgent";
-import { PathfindingBehavior } from "./src/behaviors/PathfindingBehavior";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
-
 
 /**
  * startServer is always the entry point for our game.
@@ -95,30 +91,7 @@ startServer((world) => {
 			modelScale: 0.5,
 		});
 
-		playerEntity.spawn(world, { x: 0, y: 10, z: 0 });
-		player.ui.load("ui/index.html");
-
-		// Send a nice welcome message that only the player who joined will see ;)
-		world.chatManager.sendPlayerMessage(
-			player,
-			"Welcome to the game!",
-			"00FF00"
-		);
-		world.chatManager.sendPlayerMessage(player, "Use WASD to move around.");
-		world.chatManager.sendPlayerMessage(player, "Press space to jump.");
-		world.chatManager.sendPlayerMessage(player, "Hold shift to sprint.");
-		world.chatManager.sendPlayerMessage(
-			player,
-			"Press \\ to enter or exit debug view."
-		);
-
-		player.ui.sendData({
-			type: "agentThoughts",
-			agents: agents.map((agent) => ({
-				name: agent.name,
-				lastThought: agent.getLastMonologue() || "Idle",
-			})),
-		});
+		playerEntity.spawn(world, { x: 31.5, y: 3, z: 55 });
 	});
 
 	/**
@@ -150,43 +123,9 @@ startServer((world) => {
 	}).play(world);
 
 	/**
-	 * Spawn agents for simulation
-	 *
-	 * The simulation will start as soon as the server starts, even if no players are connected.
-	 * Beware that your inference key will be charged for the number of tokens used by the agents.
-	 * The cost may increase over time as agent memory & context size increases, which increases the number of tokens used in requests.
-	 *
-	 * It is recommended that you use OpenAI's API for inference as they will automatically cache input tokens, which will reduce your costs.
-	 */
-
-	/**
-	 * General agent instructions
-	 *
-	 * These instructions are used for all agents. You can update these instructions to change global behavior or nudge agents to act in a certain way.
-	 * In this example, I include the coordinates of some cool locations on the map that agents can travel to.
-	 */
-	const generalAgentInstructions = `
-    Think through whether you need to respond to the message. Take into account all of the context you have access to.
-    Is this person talking to you? Could they be talking to someone else?
-    Do you need to call a tool to help them or take an action?
-
-    You can plan long term actions but you can update your plans on the fly by taking actions in the world.
-
-    Key locations in the map and their coordinates:
-    ${Object.entries(LOCATIONS).map(([name, coords]) => 
-        `- ${name}: ${coords.x}, ${coords.y}, ${coords.z}`
-    ).join('\n    ')}
-
-    If you pathfind to one of these locations, you can use the pathfindTo with the location coordinates as arguments.
-
-    If you call the speak tool, or another tool where you can also send a message at the same time, this is when you snap into character.
-    Your internal thought process should be clear, concise, and expertly analyze the situation.
-    `;
-
-	/**
 	 * Spawn Jim the Fisherman
 	 *
-	 * Jim is our only agent, who fishes at the pier when hungry and explores otherwise
+	 * Jim is our only agent, who fishes at the pier
 	 */
 	const jimTheFisherman = new BaseAgent({
 		name: "Jim the Fisherman",
@@ -199,79 +138,12 @@ startServer((world) => {
         You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
 
         You have a simple daily routine:
-        - To catch some fish for food at pier
-
-        For pathfinding, ALWAYS use this exact format with the coordinates property:
-        - To go to the pier: pathfindTo with {"coordinates": {"x": ${LOCATIONS.pier.x}, "y": ${LOCATIONS.pier.y}, "z": ${LOCATIONS.pier.z}}}
-        - When exploring, use random coordinates like: {"coordinates": {"x": 25, "y": 2, "z": 30}}
-        Keep x and z between -50 and 50, y at 2 for random exploration.
-
-        ${generalAgentInstructions}`,
+        - To catch some fish for food at pier`,
 	});
 	
-	jimTheFisherman.addBehavior(new PathfindingBehavior());
 	jimTheFisherman.addBehavior(new FishingBehavior(world));
 
-	// Spawn Jim exactly at the pier to ensure visibility
-	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x -20, LOCATIONS.pier.y, LOCATIONS.pier.z - 60));
+	// Spawn Jim at the pier
+	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z));
 	agents.push(jimTheFisherman);
-
-	/**
-	 * Instead of a chat command, we can override the chat message broadcast
-	 * to automatically respond to the player.
-	 */
-	world.chatManager.on(ChatEvent.BROADCAST_MESSAGE, ({ player, message }) => {
-		const agents = world.entityManager
-			.getAllEntities()
-			.filter((entity) => entity instanceof BaseAgent) as BaseAgent[];
-
-		if (!player) {
-			// Look for Agent name in [] at beginning of message
-			const agentName = message.match(/\[([^\]]+)\]/)?.[1];
-			if (agentName) {
-				const sourceAgent = agents.find(
-					(agent) => agent.name === agentName
-				);
-				if (sourceAgent) {
-					// Send message to other agents within 10 meters
-					agents.forEach((targetAgent) => {
-						if (targetAgent !== sourceAgent) {
-							const distance = Vector3.fromVector3Like(
-								sourceAgent.position
-							).distance(
-								Vector3.fromVector3Like(targetAgent.position)
-							);
-
-							if (distance <= 10) {
-								targetAgent.chat({
-									type: "Agent",
-									message,
-									agent: sourceAgent,
-								});
-							}
-						}
-					});
-				}
-			}
-			return;
-		}
-
-		const playerEntity =
-			world.entityManager.getPlayerEntitiesByPlayer(player)[0];
-
-		// Send message to any agents within 10 meters
-		agents.forEach((agent) => {
-			const distance = Vector3.fromVector3Like(
-				playerEntity.position
-			).distance(Vector3.fromVector3Like(agent.position));
-
-			if (distance <= 10) {
-				agent.chat({
-					type: "Player",
-					message,
-					player,
-				});
-			}
-		});
-	});
 });

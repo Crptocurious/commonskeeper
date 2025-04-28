@@ -23,7 +23,10 @@ export class FishingBehavior implements AgentBehavior {
 	}
 
 	onUpdate(agent: BaseAgent, world: World): void {
-		// Could add ambient fishing animations here if needed
+		// If we're not already fishing and we're near the pier, start fishing
+		if (!this.isFishing && this.isNearPier(agent)) {
+			this.onToolCall(agent, world, "cast_rod", {});
+		}
 	}
 
 	private isNearPier(agent: BaseAgent): boolean {
@@ -70,35 +73,14 @@ export class FishingBehavior implements AgentBehavior {
 				if (!result.success) {
 					this.failedAttempts++;
 					if (this.failedAttempts >= 3) {
-						// Dramatic death sequence using UI
-						agent.setChatUIState({ message: "⚠️ CRITICAL: STARVATION IMMINENT ⚠️" });
-						agent.handleEnvironmentTrigger("*Your vision starts to blur from hunger...*");
-						
-						setTimeout(() => {
-							agent.setChatUIState({ message: "💀 DEATH APPROACHING 💀" });
-							agent.handleEnvironmentTrigger("*Your legs feel weak, and you can barely stand...*");
-							
-							setTimeout(() => {
-								agent.setChatUIState({ message: "❌ VITAL SIGNS CRITICAL ❌" });
-								agent.handleEnvironmentTrigger("*With one final gasp, you collapse from starvation...*");
-								
-								setTimeout(() => {
-									agent.setChatUIState({ message: "💀 GAME OVER - DEATH BY STARVATION 💀" });
-									agent.handleEnvironmentTrigger("💀 GAME OVER - You have died of hunger 💀");
-									agent.despawn();
-								}, 1000);
-							}, 1000);
-						}, 1000);
+						// Handle death sequence
+						console.log("Agent died from starvation");
+						agent.despawn();
 						return;
 					}
 					
-					// Warning message for failed attempt
-					agent.setChatUIState({ 
-						message: `⚠️ HUNGER WARNING: ${3 - this.failedAttempts} attempts remaining! ⚠️` 
-					});
-					agent.handleEnvironmentTrigger(
-						`⚠️ No fish caught! WARNING: ${3 - this.failedAttempts} attempts remaining before starvation! ⚠️`
-					);
+					// Warning for failed attempt
+					console.log(`Failed attempt ${this.failedAttempts}/3`);
 					return;
 				}
 
@@ -110,31 +92,11 @@ export class FishingBehavior implements AgentBehavior {
 				});
 
 				const fishRemaining = this.lakeManager.getFishRemaining();
-				agent.setChatUIState({ 
-					message: `🐟 Fish Caught! (${fishRemaining} remaining)` 
-				});
-				agent.handleEnvironmentTrigger(
-					`🐟 You caught a fish! ${fishRemaining} fish remaining in the lake.`
-				);
+				console.log(`Fish caught! ${fishRemaining} remaining in the lake.`);
 			}, 5000); // 5 second fishing time
 
 			return "Casting your line...";
 		}
 	}
 
-	getPromptInstructions(): string {
-		return `
-To fish at the pier, use:
-<action type="cast_rod"></action>
-
-You must call cast_rod exactly like this, with the empty object inside the action tag.
-You must be within 5 meters of the pier to fish.`;
-	}
-
-	getState(): string {
-		const fishRemaining = this.lakeManager.getFishRemaining();
-		return this.isFishing ? 
-			"Currently fishing" : 
-			`Not fishing (Fish remaining: ${fishRemaining}, Failed attempts: ${this.failedAttempts})`;
-	}
 }
