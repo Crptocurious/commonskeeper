@@ -70,6 +70,11 @@
     font-size: 14px;
     line-height: 1.4;
 }
+.thought-energy {
+     font-size: 12px;
+     color: #aaa;
+     margin-top: 5px;
+ }
 .inventory-list {
     margin-top: 8px;
     font-size: 12px;
@@ -90,20 +95,29 @@
 
 <script>
 hytopia.onData((data) => {
+    
     if (data.type === 'lakeUpdate') {
         const lakeStatusEl = document.getElementById('lake-status');
         if (lakeStatusEl) {
             lakeStatusEl.textContent = `Stock: ${data.stock} / ${data.capacity}`;
         }
     }
+
     // --- Agent Thoughts Update ---
     else if (data.type === 'agentThoughts') {
         const container = document.getElementById('thoughts-container');
-        if (container) {
-            container.innerHTML = data.agents.map(agent => `
+        if (container) { // Add null check
+            container.innerHTML = data.agents.map(agent => {
+                // Format energy display (optional: could add a visual bar later)
+                const energyText = agent.energy !== undefined && agent.maxEnergy !== undefined
+                    ? `${Math.round(agent.energy)} / ${agent.maxEnergy}`
+                    : 'N/A';
+
+                return `
                 <div class="thought-entry">
                     <div class="thought-agent-name">${agent.name}</div>
-                    <div class="thought-text">${agent.lastThought}</div>
+                    <div class="thought-text">${agent.lastThought || 'Idle'}</div>
+                    <div class="thought-energy">⚡ Energy: ${energyText}</div>
                     ${agent.inventory && agent.inventory.length > 0 ? `
                         <div class="inventory-list">
                             ${agent.inventory.map(item => `
@@ -115,7 +129,9 @@ hytopia.onData((data) => {
                         </div>
                     ` : ''}
                 </div>
-            `).join('');
+            `}).join('');
+        } else {
+            console.error("Could not find thoughts-container element");
         }
     }
 });

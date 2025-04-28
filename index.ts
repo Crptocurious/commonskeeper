@@ -79,18 +79,30 @@ lake.on('lakeUpdated', sendLakeStatus);
 
 // Broadcast agent thoughts and inventory to all players
 export function broadcastAgentThoughts(world: any) {
+
+	const agentEntities = world.entityManager
+ 				.getAllEntities()
+ 				.filter((e: any) => e instanceof BaseAgent) as BaseAgent[];
+
+	const agentDataForUI = agentEntities.map((agent: any) => {
+		const agentState = agent.getCurrentState();
+		return {
+			name: agent.name,
+			lastThought: agent.getLastThought() || "Idle",
+			energy: agentState.energy,
+			maxEnergy: agentState.maxEnergy,
+			inventory: agentState.inventory
+		};
+	});
+
 	const playerEntities = world.entityManager.getAllPlayerEntities();
-	const agentData = agents.map(agent => ({
-		name: agent.getName(),
-		lastThought: agent.getLastThought(),
-		inventory: agent.getInventoryArray(),
-	}));
+
 	playerEntities.forEach((playerEntity: any) => {
 		const player = playerEntity.player;
 		if (player && player.ui) {
 			player.ui.sendData({
 				type: 'agentThoughts',
-				agents: agentData
+				agents: agentDataForUI
 			});
 		}
 	});

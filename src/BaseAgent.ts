@@ -12,6 +12,9 @@ import {
 	PlayerEntity,
 } from "hytopia";
 
+import { logEvent } from "./logger";
+import { EnergyManager, type EnergyState } from "./EnergyManager";
+
 /**
  * This is the interface that all behaviors must implement.
  * See each of the behaviors for examples of how to implement this.
@@ -25,6 +28,7 @@ export interface AgentBehavior {
 		args: any,
 		player?: Player
 	): string | void;
+	getState(): Record<string, any>;
 }
 
 export interface InventoryItem {
@@ -41,6 +45,7 @@ export class BaseAgent extends Entity {
 	private readonly INACTIVITY_THRESHOLD = 30000; // 30 seconds in milliseconds
 	private inventory: Map<string, InventoryItem> = new Map();
 	private lastThought: string = "idle";
+	private energyManager: EnergyManager; // Use EnergyManager instance
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
@@ -55,6 +60,7 @@ export class BaseAgent extends Entity {
 			},
 		});
 
+		this.energyManager = new EnergyManager();
 		this.on(EntityEvent.TICK, this.onTickBehavior);
 
 		// Start inactivity checker when agent is created
@@ -71,7 +77,30 @@ export class BaseAgent extends Entity {
 
 	private onTickBehavior = () => {
 		if (!this.isSpawned || !this.world) return;
-		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
+
+		const previousEnergyState = this.energyManager.getState();
+ 		this.energyManager.decayTick(); // Delegate decay to manager
+ 		const currentEnergyState = this.energyManager.getState();
+ 
+ 		// Log energy decay event here, with agent context
+ 		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
+ 			logEvent({
+ 				type: "agent_energy_decay",
+ 				agentId: this.id,
+ 				agentName: this.name,
+ 				energy: currentEnergyState.currentEnergy,
+ 				decayAmount: previousEnergyState.currentEnergy - currentEnergyState.currentEnergy // Calculate actual decay
+ 			});
+ 		}
+ 
+ 		// Existing behavior updates
+ 		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
+ 
+ 		// Check depletion status from manager
+ 		if (currentEnergyState.isDepleted) {
+ 			// Placeholder for potential death/starvation logic
+ 			// console.log(`${this.name} has run out of energy!`);
+ 		}
 	};
 
 	public addBehavior(behavior: AgentBehavior) {
@@ -80,6 +109,22 @@ export class BaseAgent extends Entity {
 
 	public getBehaviors(): AgentBehavior[] {
 		return this.behaviors;
+	}
+
+	public getCurrentState(): Record<string, any> {
+		const state: Record<string, any> = {};
+		this.behaviors.forEach((behavior) => {
+			if (behavior.getState) {
+				state[behavior.constructor.name] = behavior.getState();
+			}
+		});
+
+		// Get energy state from manager
+		const energyState = this.energyManager.getState();
+		state.energy = energyState.currentEnergy;
+		state.maxEnergy = energyState.maxEnergy;
+		state.inventory = Array.from(this.inventory.values()); // Keep inventory logic here
+		return state;
 	}
 
 	/**
@@ -190,5 +235,24 @@ export class BaseAgent extends Entity {
 
 	public getInventoryArray(): InventoryItem[] {
 		return Array.from(this.inventory.values());
+	}
+
+	// Method to gain energy - delegates to manager
+	public gainEnergy(amount: number): void {
+		const previousEnergyState = this.energyManager.getState();
+		this.energyManager.gainEnergy(amount);
+		const currentEnergyState = this.energyManager.getState();
+
+		// Log energy gain here, with agent context
+		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
+			logEvent({
+				type: "agent_energy_gain",
+				agentId: this.id,
+				agentName: this.name,
+				energy: currentEnergyState.currentEnergy,
+				gainAmount: currentEnergyState.currentEnergy - previousEnergyState.currentEnergy // Calculate actual gain
+			});
+			console.log(`${this.name} gained energy. Current: ${currentEnergyState.currentEnergy}/${currentEnergyState.maxEnergy}`);
+		}
 	}
 }
