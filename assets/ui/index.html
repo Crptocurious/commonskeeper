@@ -1,0 +1,42 @@
+<!-- Lake Status Panel -->
+<div id="lake-status-panel">
+    <h2>Lake Status</h2>
+    <p id="lake-status">Loading...</p>
+</div>
+
+<style>
+#lake-status-panel {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    width: 300px;
+    font-family: Arial, sans-serif;
+    z-index: 10;
+    box-sizing: border-box;
+}
+#lake-status-panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #1e90ff;
+}
+#lake-status {
+    font-size: 14px;
+    line-height: 1.4;
+    color: #ddd;
+}
+</style>
+
+<script>
+hytopia.onData((data) => {
+    if (data.type === 'lakeUpdate') {
+        const lakeStatusEl = document.getElementById('lake-status');
+        if (lakeStatusEl) {
+            lakeStatusEl.textContent = `Stock: ${data.stock} / ${data.capacity}`;
+        }
+    }
+});
+</script>

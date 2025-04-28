@@ -137,7 +137,7 @@ export class BaseAgent extends Entity {
 			"Environment trigger for agent " + this.name + ":",
 			message
 		);
-		this.parseXmlResponse(`<action type="acknowledge"></action>`);
+		this.parseXmlResponse(`<action type="acknowledge">{ "message": "${message}" }</action>`);
 	}
 
 	// Clean up interval when agent is destroyed

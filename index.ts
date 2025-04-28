@@ -29,11 +29,13 @@ import {
 	PlayerEntity,
 	PlayerEvent,
 	Vector3,
+	EntityEvent
 } from "hytopia";
 
 import worldMap from "./assets/map.json";
 import { BaseAgent } from "./src/BaseAgent";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
+import { Lake } from "./src/Lake";
 
 /**
  * startServer is always the entry point for our game.
@@ -48,9 +50,31 @@ import { FishingBehavior } from "./src/behaviors/FishingBehavior";
 // Store agents globally
 const agents: BaseAgent[] = [];
 
+// Instantiate the Lake globally
+const lake = new Lake(10, 5, 1); // Capacity=100, InitialStock=50, RegenRate=1 fish/tick
+
 const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 },
 };
+
+// Helper to send lake status to UI (now only used as an event handler)
+function sendLakeStatus(world: any, lake: any) {
+	const { stock, capacity } = lake.getState();
+	const playerEntities = world.entityManager.getAllPlayerEntities();
+	playerEntities.forEach((playerEntity: any) => {
+		const player = playerEntity.player;
+		if (player && player.ui) {
+			player.ui.sendData({
+				type: 'lakeUpdate',
+				stock: stock,
+				capacity: capacity
+			});
+		}
+	});
+}
+
+// Register the event handler for lake updates
+lake.on('lakeUpdated', sendLakeStatus);
 
 startServer((world) => {
 	/**
@@ -75,6 +99,14 @@ startServer((world) => {
 	world.loadMap(worldMap);
 
 	/**
+	 * World Tick Event: Regenerate Lake (Attempting via EntityEvent.TICK on world)
+	 */
+	world.on(EntityEvent.TICK, (payload: any) => {
+		const { deltaTimeMs } = payload as { deltaTimeMs: number };
+		lake.regenerate(world);
+	});
+
+	/**
 	 * Handle player joining the game. The onPlayerJoin
 	 * function is called when a new player connects to
 	 * the game. From here, we create a basic player
@@ -92,6 +124,7 @@ startServer((world) => {
 		});
 
 		playerEntity.spawn(world, { x: 31.5, y: 3, z: 55 });
+		player.ui.load('ui/index.html'); // This loads the UI for the player
 	});
 
 	/**
@@ -141,7 +174,7 @@ startServer((world) => {
         - To catch some fish for food at pier`,
 	});
 	
-	jimTheFisherman.addBehavior(new FishingBehavior(world));
+	jimTheFisherman.addBehavior(new FishingBehavior(lake));
 
 	// Spawn Jim at the pier
 	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z));

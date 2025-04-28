@@ -1,25 +1,26 @@
 import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
-import { LakeResourceManager } from "../ResourceManager";
+import { Lake } from "../Lake";
 
 interface FishResult {
 	success: boolean;
+	harvestedAmount: number;
 }
 
 /**
  * This is a simple implementation of a fishing behavior for Agents.
- * It uses the LakeResourceManager to simulate a realistic fishing environment
- * where success depends on the current fish population in the lake.
+ * It uses the Lake class to simulate a realistic fishing environment
+ * with capacity, regeneration, and potential collapse.
  */
 export class FishingBehavior implements AgentBehavior {
 	private isFishing: boolean = false;
 	private readonly PIER_LOCATION = new Vector3(31.5, 3, 59.5);
 	private readonly FISHING_RANGE = 5; // meters
-	private lakeManager: LakeResourceManager;
+	private lakeManager: Lake;
 	private failedAttempts: number = 0;
 
-	constructor(world: World) {
-		this.lakeManager = new LakeResourceManager(world);
+	constructor(lake: Lake) {
+		this.lakeManager = lake;
 	}
 
 	onUpdate(agent: BaseAgent, world: World): void {
@@ -36,9 +37,11 @@ export class FishingBehavior implements AgentBehavior {
 		return distance <= this.FISHING_RANGE;
 	}
 
-	private rollForFish(): FishResult {
+	private rollForFish(world: World): FishResult {
+		const harvestedAmount = this.lakeManager.harvest(1, world);
 		return {
-			success: this.lakeManager.tryToFish()
+			success: harvestedAmount > 0,
+			harvestedAmount: harvestedAmount
 		};
 	}
 
@@ -68,7 +71,7 @@ export class FishingBehavior implements AgentBehavior {
 			// Simulate fishing time
 			setTimeout(() => {
 				this.isFishing = false;
-				const result = this.rollForFish();
+				const result = this.rollForFish(world);
 
 				if (!result.success) {
 					this.failedAttempts++;
@@ -88,15 +91,16 @@ export class FishingBehavior implements AgentBehavior {
 				this.failedAttempts = 0;
 				agent.addToInventory({
 					name: "fish",
-					quantity: 1
+					quantity: result.harvestedAmount
 				});
 
-				const fishRemaining = this.lakeManager.getFishRemaining();
-				console.log(`Fish caught! ${fishRemaining} remaining in the lake.`);
+				const fishRemaining = this.lakeManager.getState().stock;
+				agent.handleEnvironmentTrigger(
+					`🐟 You caught a fish! ${fishRemaining} fish remaining in the lake.`
+				);
 			}, 5000); // 5 second fishing time
 
 			return "Casting your line...";
 		}
 	}
-
 }
