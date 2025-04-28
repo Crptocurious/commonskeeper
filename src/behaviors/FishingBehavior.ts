@@ -1,29 +1,35 @@
 import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
-import { LakeResourceManager } from "../ResourceManager";
+import { Lake } from "../Lake";
+import { broadcastAgentThoughts } from "../../index";
+import { logEvent } from "../logger";
 
 interface FishResult {
 	success: boolean;
+	harvestedAmount: number;
 }
 
 /**
  * This is a simple implementation of a fishing behavior for Agents.
- * It uses the LakeResourceManager to simulate a realistic fishing environment
- * where success depends on the current fish population in the lake.
+ * It uses the Lake class to simulate a realistic fishing environment
+ * with capacity, regeneration, and potential collapse.
  */
 export class FishingBehavior implements AgentBehavior {
 	private isFishing: boolean = false;
 	private readonly PIER_LOCATION = new Vector3(31.5, 3, 59.5);
 	private readonly FISHING_RANGE = 5; // meters
-	private lakeManager: LakeResourceManager;
+	private lakeManager: Lake;
 	private failedAttempts: number = 0;
 
-	constructor(world: World) {
-		this.lakeManager = new LakeResourceManager(world);
+	constructor(lake: Lake) {
+		this.lakeManager = lake;
 	}
 
 	onUpdate(agent: BaseAgent, world: World): void {
-		// Could add ambient fishing animations here if needed
+		// If we're not already fishing and we're near the pier, start fishing
+		if (!this.isFishing && this.isNearPier(agent)) {
+			this.onToolCall(agent, world, "cast_rod", {});
+		}
 	}
 
 	private isNearPier(agent: BaseAgent): boolean {
@@ -33,9 +39,11 @@ export class FishingBehavior implements AgentBehavior {
 		return distance <= this.FISHING_RANGE;
 	}
 
-	private rollForFish(): FishResult {
+	private rollForFish(world: World): FishResult {
+		const harvestedAmount = this.lakeManager.harvest(1, world);
 		return {
-			success: this.lakeManager.tryToFish()
+			success: harvestedAmount > 0,
+			harvestedAmount: harvestedAmount
 		};
 	}
 
@@ -47,6 +55,16 @@ export class FishingBehavior implements AgentBehavior {
 	): string | void {
 		if (toolName === "cast_rod") {
 			console.log("Fishing tool called");
+
+			// Log the attempt
+			logEvent({
+				type: "agent_action_attempt",
+				agentId: agent.id,
+				agentName: agent.name,
+				action: "cast_rod",
+				nearPier: this.isNearPier(agent),
+				alreadyFishing: this.isFishing
+			});
 
 			if (!this.isNearPier(agent)) {
 				return "You need to be closer to the pier to fish!";
@@ -65,40 +83,31 @@ export class FishingBehavior implements AgentBehavior {
 			// Simulate fishing time
 			setTimeout(() => {
 				this.isFishing = false;
-				const result = this.rollForFish();
+				const result = this.rollForFish(world);
 
 				if (!result.success) {
 					this.failedAttempts++;
+
+					// Add random small thoughts for failed attempts
+					const failThoughts = [
+						"No luck this time...",
+						"The fish just aren't biting.",
+						"I will die now..."
+					];
+					const thoughtIndex = (this.failedAttempts - 1) % failThoughts.length;
+					const orderedThought = failThoughts[thoughtIndex] ?? "No luck this time...";
+					agent.setLastThought(`No fish: ${orderedThought}`);
+					broadcastAgentThoughts(world);
+
 					if (this.failedAttempts >= 3) {
-						// Dramatic death sequence using UI
-						agent.setChatUIState({ message: "⚠️ CRITICAL: STARVATION IMMINENT ⚠️" });
-						agent.handleEnvironmentTrigger("*Your vision starts to blur from hunger...*");
-						
-						setTimeout(() => {
-							agent.setChatUIState({ message: "💀 DEATH APPROACHING 💀" });
-							agent.handleEnvironmentTrigger("*Your legs feel weak, and you can barely stand...*");
-							
-							setTimeout(() => {
-								agent.setChatUIState({ message: "❌ VITAL SIGNS CRITICAL ❌" });
-								agent.handleEnvironmentTrigger("*With one final gasp, you collapse from starvation...*");
-								
-								setTimeout(() => {
-									agent.setChatUIState({ message: "💀 GAME OVER - DEATH BY STARVATION 💀" });
-									agent.handleEnvironmentTrigger("💀 GAME OVER - You have died of hunger 💀");
-									agent.despawn();
-								}, 1000);
-							}, 1000);
-						}, 1000);
+						// Handle death sequence
+						console.log("Agent died from starvation");
+						agent.despawn();
 						return;
 					}
 					
-					// Warning message for failed attempt
-					agent.setChatUIState({ 
-						message: `⚠️ HUNGER WARNING: ${3 - this.failedAttempts} attempts remaining! ⚠️` 
-					});
-					agent.handleEnvironmentTrigger(
-						`⚠️ No fish caught! WARNING: ${3 - this.failedAttempts} attempts remaining before starvation! ⚠️`
-					);
+					// Warning for failed attempt
+					console.log(`Failed attempt ${this.failedAttempts}/3`);
 					return;
 				}
 
@@ -106,35 +115,19 @@ export class FishingBehavior implements AgentBehavior {
 				this.failedAttempts = 0;
 				agent.addToInventory({
 					name: "fish",
-					quantity: 1
+					quantity: result.harvestedAmount
 				});
 
-				const fishRemaining = this.lakeManager.getFishRemaining();
-				agent.setChatUIState({ 
-					message: `🐟 Fish Caught! (${fishRemaining} remaining)` 
-				});
+				// Set agent thought and broadcast
+				const fishCount = agent.getInventory().get("fish")?.quantity || 0;
+				agent.setLastThought(`Got a fish, now I have ${fishCount} fish`);
+				broadcastAgentThoughts(world);
+
+				const fishRemaining = this.lakeManager.getState().stock;
 				agent.handleEnvironmentTrigger(
 					`🐟 You caught a fish! ${fishRemaining} fish remaining in the lake.`
 				);
-			}, 5000); // 5 second fishing time
-
-			return "Casting your line...";
+			}, 5000); // Simulate fishing time
 		}
-	}
-
-	getPromptInstructions(): string {
-		return `
-To fish at the pier, use:
-<action type="cast_rod"></action>
-
-You must call cast_rod exactly like this, with the empty object inside the action tag.
-You must be within 5 meters of the pier to fish.`;
-	}
-
-	getState(): string {
-		const fishRemaining = this.lakeManager.getFishRemaining();
-		return this.isFishing ? 
-			"Currently fishing" : 
-			`Not fishing (Fish remaining: ${fishRemaining}, Failed attempts: ${this.failedAttempts})`;
 	}
 }
