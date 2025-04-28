@@ -4,6 +4,14 @@
     <p id="lake-status">Loading...</p>
 </div>
 
+<!-- Agent Thoughts Panel -->
+<div id="agent-thoughts-panel">
+    <h2>Agent Thoughts</h2>
+    <div id="thoughts-container">
+        <!-- Thoughts will be inserted here -->
+    </div>
+</div>
+
 <style>
 #lake-status-panel {
     position: absolute;
@@ -28,6 +36,56 @@
     line-height: 1.4;
     color: #ddd;
 }
+#agent-thoughts-panel {
+    position: absolute;
+    right: 20px;
+    top: 120px; /* Below lake status */
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    width: 300px;
+    font-family: Arial, sans-serif;
+    z-index: 10;
+    box-sizing: border-box;
+}
+#agent-thoughts-panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #3498db;
+}
+.thought-entry {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+.thought-agent-name {
+    color: #3498db;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+.thought-text {
+    font-style: italic;
+    font-size: 14px;
+    line-height: 1.4;
+}
+.inventory-list {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #aaa;
+}
+.inventory-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+}
+.inventory-item-name {
+    color: #ddd;
+}
+.inventory-item-quantity {
+    color: #888;
+}
 </style>
 
 <script>
@@ -36,6 +94,28 @@ hytopia.onData((data) => {
         const lakeStatusEl = document.getElementById('lake-status');
         if (lakeStatusEl) {
             lakeStatusEl.textContent = `Stock: ${data.stock} / ${data.capacity}`;
+        }
+    }
+    // --- Agent Thoughts Update ---
+    else if (data.type === 'agentThoughts') {
+        const container = document.getElementById('thoughts-container');
+        if (container) {
+            container.innerHTML = data.agents.map(agent => `
+                <div class="thought-entry">
+                    <div class="thought-agent-name">${agent.name}</div>
+                    <div class="thought-text">${agent.lastThought}</div>
+                    ${agent.inventory && agent.inventory.length > 0 ? `
+                        <div class="inventory-list">
+                            ${agent.inventory.map(item => `
+                                <div class="inventory-item">
+                                    <span class="inventory-item-name">${item.name}</span>
+                                    <span class="inventory-item-quantity">x${item.quantity}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
         }
     }
 });

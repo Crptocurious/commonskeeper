@@ -76,6 +76,25 @@ function sendLakeStatus(world: any, lake: any) {
 // Register the event handler for lake updates
 lake.on('lakeUpdated', sendLakeStatus);
 
+// Broadcast agent thoughts and inventory to all players
+export function broadcastAgentThoughts(world: any) {
+	const playerEntities = world.entityManager.getAllPlayerEntities();
+	const agentData = agents.map(agent => ({
+		name: agent.getName(),
+		lastThought: agent.getLastThought(),
+		inventory: agent.getInventoryArray(),
+	}));
+	playerEntities.forEach((playerEntity: any) => {
+		const player = playerEntity.player;
+		if (player && player.ui) {
+			player.ui.sendData({
+				type: 'agentThoughts',
+				agents: agentData
+			});
+		}
+	});
+}
+
 startServer((world) => {
 	/**
 	 * Enable debug rendering of the physics simulation.

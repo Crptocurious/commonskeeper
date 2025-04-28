@@ -1,6 +1,7 @@
 import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
 import { Lake } from "../Lake";
+import { broadcastAgentThoughts } from "../../index";
 
 interface FishResult {
 	success: boolean;
@@ -75,6 +76,18 @@ export class FishingBehavior implements AgentBehavior {
 
 				if (!result.success) {
 					this.failedAttempts++;
+
+					// Add random small thoughts for failed attempts
+					const failThoughts = [
+						"No luck this time...",
+						"The fish just aren't biting.",
+						"I will die now..."
+					];
+					const thoughtIndex = (this.failedAttempts - 1) % failThoughts.length;
+					const orderedThought = failThoughts[thoughtIndex] ?? "No luck this time...";
+					agent.setLastThought(`No fish: ${orderedThought}`);
+					broadcastAgentThoughts(world);
+
 					if (this.failedAttempts >= 3) {
 						// Handle death sequence
 						console.log("Agent died from starvation");
@@ -94,13 +107,16 @@ export class FishingBehavior implements AgentBehavior {
 					quantity: result.harvestedAmount
 				});
 
+				// Set agent thought and broadcast
+				const fishCount = agent.getInventory().get("fish")?.quantity || 0;
+				agent.setLastThought(`Got a fish, now I have ${fishCount} fish`);
+				broadcastAgentThoughts(world);
+
 				const fishRemaining = this.lakeManager.getState().stock;
 				agent.handleEnvironmentTrigger(
 					`🐟 You caught a fish! ${fishRemaining} fish remaining in the lake.`
 				);
-			}, 5000); // 5 second fishing time
-
-			return "Casting your line...";
+			}, 5000); // Simulate fishing time
 		}
 	}
 }
