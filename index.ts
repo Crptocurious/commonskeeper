@@ -36,6 +36,7 @@ import worldMap from "./assets/map.json";
 import { BaseAgent } from "./src/BaseAgent";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
 import { Lake } from "./src/Lake";
+import { logEvent } from "./src/logger";
 
 /**
  * startServer is always the entry point for our game.
@@ -96,6 +97,21 @@ export function broadcastAgentThoughts(world: any) {
 }
 
 startServer((world) => {
+	// Log game start with initial configuration
+	const lakeState = lake.getState();
+	logEvent({
+		type: "game_start",
+		lake_config: {
+			capacity: lakeState.capacity,
+			initial_stock: lakeState.stock,
+			regen_rate: lake.regenRate
+		},
+		agents: agents.map(agent => ({
+			name: agent.getName(),
+			type: "fisherman"
+		}))
+	});
+
 	/**
 	 * Enable debug rendering of the physics simulation.
 	 * This will overlay lines in-game representing colliders,
