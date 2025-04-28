@@ -37,6 +37,7 @@ import { BaseAgent } from "./src/BaseAgent";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
 import { Lake } from "./src/Lake";
 import { logEvent } from "./src/logger";
+import { PathfindingBehavior } from "./src/behaviors/PathfindingBehavior";
 
 /**
  * startServer is always the entry point for our game.
@@ -225,8 +226,25 @@ startServer((world) => {
 	});
 	
 	jimTheFisherman.addBehavior(new FishingBehavior(lake));
+	// Add pathfinding behavior
+	const pathfindingBehavior = new PathfindingBehavior();
+	jimTheFisherman.addBehavior(pathfindingBehavior);
 
 	// Spawn Jim at the pier
-	jimTheFisherman.spawn(world, new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z));
+	const jimStartPos = new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z - 40);
+	jimTheFisherman.spawn(world, jimStartPos);
 	agents.push(jimTheFisherman);
+
+	// Check if Jim is at the pier, if not, pathfind to pier
+	const pierPos = new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z);
+	const distToPier = Vector3.fromVector3Like(jimTheFisherman.position).distance(pierPos);
+	if (distToPier > 3) {
+		// Use the PathfindingBehavior's tool call interface
+		pathfindingBehavior.onToolCall(
+			jimTheFisherman,
+			world,
+			"pathfindTo",
+			{ coordinates: { x: LOCATIONS.pier.x, y: LOCATIONS.pier.y, z: LOCATIONS.pier.z } }
+		);
+	}
 });
