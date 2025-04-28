@@ -130,4 +130,15 @@ export class FishingBehavior implements AgentBehavior {
 			}, 5000); // Simulate fishing time
 		}
 	}
+
+	getState(): Record<string, any> {
+		const fishRemaining = this.lakeManager.getState().stock;
+		const capacity = this.lakeManager.getState().capacity;
+		return {
+			isFishing: this.isFishing,
+			fishRemaining,
+			capacity,
+			failedAttempts: this.failedAttempts
+		};
+	}
 }
