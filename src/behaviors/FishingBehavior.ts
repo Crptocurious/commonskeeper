@@ -9,6 +9,13 @@ interface FishResult {
 	harvestedAmount: number;
 }
 
+interface FishingState {
+	isFishing: boolean;
+	fishRemaining: number;
+	capacity: number;
+	failedAttempts: number;
+}
+
 /**
  * This is a simple implementation of a fishing behavior for Agents.
  * It uses the Lake class to simulate a realistic fishing environment
@@ -129,5 +136,16 @@ export class FishingBehavior implements AgentBehavior {
 				);
 			}, 5000); // Simulate fishing time
 		}
+	}
+
+	getState(): Record<string, any> {
+		const fishRemaining = this.lakeManager.getState().stock;
+		const capacity = this.lakeManager.getState().capacity;
+		return {
+			isFishing: this.isFishing,
+			fishRemaining,
+			capacity,
+			failedAttempts: this.failedAttempts
+		};
 	}
 }
