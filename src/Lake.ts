@@ -1,5 +1,6 @@
 import { World } from "hytopia"; // Assuming World might be needed later, keep for now? Or remove? Let's keep for now just in case.
 import { EventEmitter } from "events";
+import { logEvent } from "./logger";
 
 export const EVENT_COLLAPSE = 'lake:collapse'; // Define event name for potential future use
 
@@ -68,10 +69,29 @@ export class Lake extends EventEmitter {
     const harvestedAmount = Math.min(amount, this.currentStock);
     this.currentStock -= harvestedAmount;
 
+    // Log the harvest event if successful
+    if (harvestedAmount > 0) {
+      logEvent({
+          type: "lake_harvest",
+          // agentId: agent?.id, // Ideally, pass agent info to harvest()
+          // agentName: agent?.name,
+          requestedAmount: amount,
+          harvestedAmount: harvestedAmount,
+          stockRemaining: this.currentStock,
+      });
+  }
+
     // Check for collapse *after* harvesting
     if (this.currentStock <= 0) {
       console.warn(`Lake collapsed! Stock reached ${this.currentStock}.`);
       // Future: Use an event emitter to signal collapse (e.g., this.eventEmitter.emit(EVENT_COLLAPSE);)
+
+      // Log collapse event
+      logEvent({
+        type: "lake_collapse",
+        stock: this.currentStock, // Should be <= 0
+        capacity: this.capacity,
+      });
     }
 
     if (world) {

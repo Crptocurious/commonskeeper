@@ -2,6 +2,7 @@ import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
 import { Lake } from "../Lake";
 import { broadcastAgentThoughts } from "../../index";
+import { logEvent } from "../logger";
 
 interface FishResult {
 	success: boolean;
@@ -54,6 +55,16 @@ export class FishingBehavior implements AgentBehavior {
 	): string | void {
 		if (toolName === "cast_rod") {
 			console.log("Fishing tool called");
+
+			// Log the attempt
+			logEvent({
+				type: "agent_action_attempt",
+				agentId: agent.id,
+				agentName: agent.name,
+				action: "cast_rod",
+				nearPier: this.isNearPier(agent),
+				alreadyFishing: this.isFishing
+			});
 
 			if (!this.isNearPier(agent)) {
 				return "You need to be closer to the pier to fish!";
