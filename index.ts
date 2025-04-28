@@ -144,6 +144,9 @@ startServer((world) => {
 
 		playerEntity.spawn(world, { x: 31.5, y: 3, z: 55 });
 		player.ui.load('ui/index.html'); // This loads the UI for the player
+
+		sendLakeStatus(world, lake);
+		broadcastAgentThoughts(world);
 	});
 
 	/**

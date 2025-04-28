@@ -40,7 +40,7 @@ export class BaseAgent extends Entity {
 	private inactivityCheckInterval?: ReturnType<typeof setInterval>;
 	private readonly INACTIVITY_THRESHOLD = 30000; // 30 seconds in milliseconds
 	private inventory: Map<string, InventoryItem> = new Map();
-	private lastThought: string = "";
+	private lastThought: string = "idle";
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
