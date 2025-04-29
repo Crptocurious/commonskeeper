@@ -1,7 +1,6 @@
 import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
 import { Lake } from "../Lake";
-import { broadcastAgentThoughts } from "../../index";
 import { logEvent } from "../logger";
 
 interface FishResult {
@@ -26,10 +25,7 @@ export class FishingBehavior implements AgentBehavior {
 	}
 
 	onUpdate(agent: BaseAgent, world: World): void {
-		// If we're not already fishing and we're near the pier, start fishing
-		if (!this.isFishing && this.isNearPier(agent)) {
-			this.onToolCall(agent, world, "cast_rod", {});
-		}
+		// Could add ambient fishing animations here if needed
 	}
 
 	private isNearPier(agent: BaseAgent): boolean {
@@ -78,7 +74,7 @@ export class FishingBehavior implements AgentBehavior {
 
 			// Start fishing animation if available
 			agent.stopModelAnimations(["walk_upper", "walk_lower", "run_upper", "run_lower"]);
-			agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]);
+			agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]); // Could be replaced with a fishing animation
 
 			// Simulate fishing time
 			setTimeout(() => {
@@ -87,58 +83,88 @@ export class FishingBehavior implements AgentBehavior {
 
 				if (!result.success) {
 					this.failedAttempts++;
-
-					// Add random small thoughts for failed attempts
-					const failThoughts = [
-						"No luck this time...",
-						"The fish just aren't biting.",
-						"I will die now..."
-					];
-					const thoughtIndex = (this.failedAttempts - 1) % failThoughts.length;
-					const orderedThought = failThoughts[thoughtIndex] ?? "No luck this time...";
-					agent.setLastThought(`No fish: ${orderedThought}`);
-					broadcastAgentThoughts(world);
-
 					if (this.failedAttempts >= 3) {
 						// Handle death sequence
-						console.log("Agent died from starvation");
+						agent.handleEnvironmentTrigger(
+							"You've failed to catch fish too many times and have starved to death..."
+						);
 						agent.despawn();
 						return;
 					}
-					
-					// Warning for failed attempt
-					console.log(`Failed attempt ${this.failedAttempts}/3`);
+					agent.handleEnvironmentTrigger(
+						"Nothing seems to be biting..."
+					);
 					return;
 				}
 
-				// Reset failed attempts on successful catch
-				this.failedAttempts = 0;
 				agent.addToInventory({
 					name: "fish",
-					quantity: result.harvestedAmount
+					quantity: result.harvestedAmount,
+					metadata: {},
 				});
 
-				// Set agent thought and broadcast
-				const fishCount = agent.getInventory().get("fish")?.quantity || 0;
-				agent.setLastThought(`Got a fish, now I have ${fishCount} fish`);
-				broadcastAgentThoughts(world);
-
-				const fishRemaining = this.lakeManager.getState().stock;
 				agent.handleEnvironmentTrigger(
-					`🐟 You caught a fish! ${fishRemaining} fish remaining in the lake.`
+					`You caught ${result.harvestedAmount} fish!`
 				);
-			}, 5000); // Simulate fishing time
+			}, 5000); // 5 second fishing time
+
+			return "Casting your line...";
+		} else if (toolName === "give_fish") {
+			const { size, weight, target } = args;
+			const fishDescription = `${size} fish`;
+
+			if (!agent.removeFromInventory(fishDescription, 1)) {
+				return "You don't have that fish anymore!";
+			}
+
+			const nearbyEntities = agent.getNearbyEntities(5);
+			const targetEntity = nearbyEntities.find((e) => e.name === target);
+
+			if (!targetEntity) {
+				return `Cannot find ${target} nearby. Try getting closer to them.`;
+			}
+
+			// Add to target's inventory if it's an agent
+			if (targetEntity.type === "Agent") {
+				const targetAgent = world.entityManager
+					.getAllEntities()
+					.find(
+						(e) => e instanceof BaseAgent && e.name === target
+					) as BaseAgent;
+
+				if (targetAgent) {
+					targetAgent.addToInventory({
+						name: fishDescription,
+						quantity: 1,
+						metadata: { size, weight },
+					});
+				}
+			}
+
+			return `Successfully gave ${fishDescription} to ${target}`;
 		}
 	}
 
-	getState(): Record<string, any> {
-		const fishRemaining = this.lakeManager.getState().stock;
-		const capacity = this.lakeManager.getState().capacity;
-		return {
-			isFishing: this.isFishing,
-			fishRemaining,
-			capacity,
-			failedAttempts: this.failedAttempts
-		};
+	getPromptInstructions(): string {
+		return `
+To fish at the pier, use:
+<action type="cast_rod"></action>
+
+You must call cast_rod exactly like this, with the empty object inside the action tag.
+
+To give a fish to another agent, use:
+<action type="give_fish">
+{
+    target: "name of the player or agent to give the fish to"
+}
+</action>
+
+You must be within 5 meters of the pier to fish.
+Each attempt takes 5 seconds and has a chance to catch nothing or a fish.
+You can only have one line in the water at a time.`;
+	}
+
+	getState(): string {
+		return this.isFishing ? "Currently fishing" : "Not fishing";
 	}
 }
