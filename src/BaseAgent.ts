@@ -80,6 +80,8 @@ export class BaseAgent extends Entity {
 	private inventory: Map<string, InventoryItem> = new Map();
 	private energyManager: EnergyManager;
 
+	public isDead: boolean = false; // Added property to track death state
+
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
 			name: options.name || "BaseAgent",
@@ -179,10 +181,17 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 	private onTickBehavior = () => {
 		if (!this.isSpawned || !this.world) return;
 
+		// --- Death Check ---
+		if (this.isDead) {
+			// If agent is dead, do nothing else this tick. UI should remain "Dead".
+			return;
+		}
+		// --- End Death Check ---
+
 		const previousEnergyState = this.energyManager.getState();
  		this.energyManager.decayTick(); // Delegate decay to manager
  		const currentEnergyState = this.energyManager.getState();
- 
+
  		// Log energy decay event here, with agent context
  		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
  			logEvent({
@@ -193,15 +202,39 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
  				decayAmount: previousEnergyState.currentEnergy - currentEnergyState.currentEnergy // Calculate actual decay
  			});
  		}
- 
+
+ 		// Check depletion status from manager
+		if (currentEnergyState.isDepleted) {
+			// Check if already dead to avoid redundant logs/actions
+			if (!this.isDead) {
+				this.isDead = true;
+				this.setChatUIState({ message: "Dead", energy: `0/${currentEnergyState.maxEnergy}` }); // Update UI to show Dead
+				console.log(`${this.name} has run out of energy and died!`);
+				logEvent({
+					type: "agent_death",
+					agentId: this.id,
+					agentName: this.name,
+				});
+				// Unlock rotations by directly setting the rigid body property
+				if (this.rawRigidBody) {
+					this.rawRigidBody.setEnabledRotations({ x: true, y: true, z: true });
+				}
+				// Optional: Stop any ongoing behaviors immediately on death
+				// this.handleToolCall("stop", {}); // Example if you have a 'stop' action
+			}
+			return; // Agent is dead, stop further processing this tick
+		}
+
+		// --- Normal Tick Behavior (if not dead) ---
  		// Existing behavior updates
  		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
- 
- 		// Check depletion status from manager
- 		if (currentEnergyState.isDepleted) {
- 			// Placeholder for potential death/starvation logic
- 			// console.log(`${this.name} has run out of energy!`);
- 		}
+
+ 		// Ensure the energy display is up-to-date in the UI
+ 		// This assumes setChatUIState merges the new state with the existing one
+  		this.setChatUIState({
+  			energy: `${currentEnergyState.currentEnergy}/${currentEnergyState.maxEnergy}` // Always update energy display
+  		});
+		// --- End Normal Tick Behavior ---
 	};
 
 	public addBehavior(behavior: AgentBehavior) {
