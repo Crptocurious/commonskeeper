@@ -191,26 +191,16 @@ export class PathfindingBehavior implements AgentBehavior {
 		return Math.abs(x1 - x2) + Math.abs(z1 - z2); // Manhattan distance
 	}
 
-	getState(): Record<string, any> {
-		const isPathfinding = this.path.length > 0 && this.currentPathIndex < this.path.length;
-		let distanceRemaining = 0;
-		if (isPathfinding) {
-			const last = this.path[this.path.length - 1];
-			const current = this.path[this.currentPathIndex] ?? last;
-			if (last && current) {
-				distanceRemaining = Vector3.fromVector3Like(last).distance(current);
-			}
+	getState(): string {
+		// We want to return a message depending on whether or not we are currently pathfinding
+		if (this.path.length > 0) {
+			const distance = Vector3.fromVector3Like(
+				this.path[this.path.length - 1]
+			).distance(this.path[0]);
+			return `Pathfinding (${distance.toFixed(1)}m remaining)`;
+		} else {
+			return "Not currently pathfinding";
 		}
-		return {
-			isPathfinding,
-			distanceRemaining,
-			currentPathIndex: this.currentPathIndex,
-			totalPathLength: this.path.length,
-			targetEntityName: this.targetEntity ? this.targetEntity.name : null,
-			isJumping: this.isJumping,
-			jumpCooldown: this.jumpCooldown,
-			path: this.path.map((v) => ({ x: v.x, y: v.y, z: v.z })),
-		};
 	}
 
 	private findPath(
