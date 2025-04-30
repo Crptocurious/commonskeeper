@@ -1,7 +1,7 @@
-import type { Lake } from '../Lake';
-import type { EnergyManager } from '../EnergyManager';
-import { ScratchMemory } from './ScratchMemory';
-import { logEvent } from '../logger';
+import type { Lake } from '../../Lake';
+import type { EnergyManager } from '../../EnergyManager';
+import { ScratchMemory } from '../memory/ScratchMemory';
+import { logEvent } from '../../logger';
 
 export interface AgentObservation {
   agentId: string;

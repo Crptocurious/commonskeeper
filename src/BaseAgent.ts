@@ -17,6 +17,7 @@ import type { ChatCompletionMessageParam } from "openai/src/resources/index.js";
 
 import { logEvent } from "./logger";
 import { EnergyManager, type EnergyState } from "./EnergyManager";
+import { Plan, Execute, Communication, createBrain } from "./brain";
 
 /**
  * This is the interface that all behaviors must implement.
@@ -79,6 +80,14 @@ export class BaseAgent extends Entity {
 
 	private inventory: Map<string, InventoryItem> = new Map();
 	private energyManager: EnergyManager;
+	
+	// Cognitive modules using the new brain system
+	private brain: {
+		plan: Plan;
+		execute: Execute;
+		communication: Communication;
+		memory: any;
+	};
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
@@ -100,6 +109,13 @@ export class BaseAgent extends Entity {
 		this.openai = new OpenAI({
 			baseURL: process.env.OPENAI_API_BASE_URL,
 			apiKey: process.env.OPENAI_API_KEY,
+		});
+		
+		// Initialize brain modules with a unique string ID
+		const uniqueAgentId = typeof this.id === 'string' ? this.id : `agent-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+		this.brain = createBrain({
+			agentId: uniqueAgentId,
+			systemPrompt: options.systemPrompt
 		});
 		
 		// Start inactivity checker when agent is created
@@ -260,8 +276,7 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 	}
 
 	/**
-	 * Main chat method. We feed environment/player messages + state to the LLM.
-	 * We instruct it to produce <monologue> for hidden thoughts, <action type="..."> for real actions.
+	 * Main chat method now uses the Communication module
 	 */
 	public async chat(options: ChatOptions) {
 		// Reset inactivity timer when anyone talks nearby
@@ -278,8 +293,8 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 
 			// Set up new delayed response
 			this.pendingAgentResponse = {
-				timeoutId: setTimeout(() => {
-					this.processChatMessage(options);
+				timeoutId: setTimeout(async () => {
+					await this.processChatWithCommunicationModule(options);
 					this.pendingAgentResponse = undefined;
 				}, 5000), // 5 second delay
 				options,
@@ -294,65 +309,54 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 			this.pendingAgentResponse = undefined;
 		}
 
-		await this.processChatMessage(options);
+		await this.processChatWithCommunicationModule(options);
 	}
 
-	private async processChatMessage(options: ChatOptions) {
-		const { type, message, player, agent } = options;
+	/**
+	 * Process a chat message using the Communication module
+	 */
+	private async processChatWithCommunicationModule(options: ChatOptions) {
+		if (!this.world) return;
+		
 		try {
-			if (this.chatHistory.length === 0) {
-				this.chatHistory.push({
-					role: "system",
-					content: this.buildSystemPrompt(this.systemPrompt),
+			// Process the message through the Communication module
+			const result = await this.brain.communication.processChatMessage(
+				this,
+				this.world,
+				options
+			);
+			
+			// Handle monologue if present
+			if (result.monologue) {
+				this.internalMonologue.push(result.monologue);
+				
+				// Update UI with the thought
+				this.setChatUIState({
+					message: result.monologue,
+					isThinking: true,
+					agentName: this.name,
 				});
+				
+				// Broadcast thought to all players
+				this.broadcastThoughtUpdate();
 			}
-
-			const currentState = this.getCurrentState();
-			const nearbyEntities = this.getNearbyEntities().map((e) => ({
-				name: e.name,
-				type: e.type,
-				state: e instanceof BaseAgent ? e.getCurrentState() : undefined,
-			}));
-
-			let prefix = "";
-			if (type === "Environment") prefix = "ENVIRONMENT: ";
-			else if (type === "Player" && player)
-				prefix = `[${player.username}]: `;
-			else if (type === "Agent" && agent)
-				prefix = `[${agent.name} (AI)]: `;
-
-			const userMessage = `${prefix}${message}\nState: ${JSON.stringify(
-				currentState
-			)}\nNearby: ${JSON.stringify(nearbyEntities)}`;
-
-			this.chatHistory.push({ role: "user", content: userMessage });
-
-			const completion = await this.openai.chat.completions.create({
-				model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-				messages: this.chatHistory,
-				temperature: 0.7,
-			});
-
-			const response = completion.choices[0]?.message;
-			if (!response || !response.content) return;
-
-			console.log("Response:", response.content);
-
-			this.parseXmlResponse(response.content);
-
-			// Keep the assistant's text in chat history
-			this.chatHistory.push({
-				role: "assistant",
-				content: response.content || "",
-			});
+			
+			// Execute any actions that were returned
+			for (const action of result.actions) {
+				this.handleToolCall(action.type, action.args);
+			}
+			
+			// Update last action time
+			this.lastActionTime = Date.now();
 		} catch (error) {
-			console.error("OpenAI API error:", error);
+			console.error("Error in chat processing:", error);
 		}
 	}
 
 	/**
 	 * Parse the LLM's response for <monologue> and <action> tags.
-	 * <monologue> is internal. <action> calls onToolCall from behaviors.
+	 * This is kept for backwards compatibility with the old chat system.
+	 * New code should use the Plan module directly.
 	 */
 	private parseXmlResponse(text: string) {
 		// <monologue> hidden
@@ -363,30 +367,7 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 			if (thought) {
 				this.internalMonologue.push(thought);
 				// Broadcast thought to all players
-				if (this.world) {
-					const allPlayers = this.world.entityManager
-						.getAllEntities()
-						.filter((e) => e instanceof PlayerEntity)
-						.map((e) => (e as PlayerEntity).player);
-
-					allPlayers.forEach((player) => {
-						player.ui.sendData({
-							type: "agentThoughts",
-							agents: this.world!.entityManager.getAllEntities()
-								.filter((e) => e instanceof BaseAgent)
-								.map((e) => {
-									const agentState = (e as BaseAgent).getCurrentState();
-									return {
-										name: e.name,
-										lastThought: (e as BaseAgent).getLastMonologue() || "Idle",
-										energy: agentState.energy,
-										maxEnergy: agentState.maxEnergy,
-										inventory: Array.from((e as BaseAgent).getInventory().values())
-									};
-								}),
-						});
-					});
-				}
+				this.broadcastThoughtUpdate();
 			}
 		}
 
@@ -446,9 +427,101 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 			"Environment trigger for agent " + this.name + ":",
 			message
 		);
-		this.chat({
-			type: "Environment",
-			message,
+		
+		// Use the new planning and execution system
+		if (this.world) {
+			// Async function to handle planning and execution
+			const planAndExecute = async () => {
+				try {
+					// Plan what to do based on the trigger
+					const plan = await this.brain.plan.planNextAction(
+						this,
+						this.world!,
+						message
+					);
+					
+					// Log the planned action
+					console.log(`Agent ${this.name} planned action:`, plan);
+					
+					// Execute the planned action
+					this.brain.execute.executeAction(this, this.world!, plan);
+					
+					// Update last action time
+					this.lastActionTime = Date.now();
+					
+					// Add monologue to internal thoughts
+					if (plan.monologue) {
+						this.internalMonologue.push(plan.monologue);
+						
+						// Update the chat UI with the agent's thought
+						this.setChatUIState({
+							message: plan.monologue,
+							isThinking: true,
+							agentName: this.name,
+						});
+					} else {
+						// Fallback to using reasoning if no explicit monologue
+						this.internalMonologue.push(
+							`Trigger: "${message}". Thinking: ${plan.reasoning}`
+						);
+						
+						// Update the chat UI with the agent's thought
+						this.setChatUIState({
+							message: plan.reasoning,
+							isThinking: true,
+							agentName: this.name,
+						});
+					}
+					
+					// Broadcast thought update to all players
+					this.broadcastThoughtUpdate();
+				} catch (error) {
+					console.error("Error in planning/execution:", error);
+					
+					// Fallback to original chat method if planning fails
+					this.chat({
+						type: "Environment",
+						message,
+					});
+				}
+			};
+			
+			// Start the async planning and execution
+			planAndExecute();
+		} else {
+			// Fallback to original chat method if world is not available
+			this.chat({
+				type: "Environment",
+				message,
+			});
+		}
+	}
+
+	// Helper method to broadcast thought updates to all players
+	private broadcastThoughtUpdate(): void {
+		if (!this.world) return;
+		
+		const allPlayers = this.world.entityManager
+			.getAllEntities()
+			.filter((e) => e instanceof PlayerEntity)
+			.map((e) => (e as PlayerEntity).player);
+			
+		allPlayers.forEach((player) => {
+			player.ui.sendData({
+				type: "agentThoughts",
+				agents: this.world!.entityManager.getAllEntities()
+					.filter((e) => e instanceof BaseAgent)
+					.map((e) => {
+						const agentState = (e as BaseAgent).getCurrentState();
+						return {
+							name: e.name,
+							lastThought: (e as BaseAgent).getLastMonologue() || "Idle",
+							energy: agentState.energy,
+							maxEnergy: agentState.maxEnergy,
+							inventory: Array.from((e as BaseAgent).getInventory().values())
+						};
+					}),
+			});
 		});
 	}
 
