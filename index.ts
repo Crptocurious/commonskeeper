@@ -71,6 +71,10 @@ const LOCATIONS = {
 const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
 const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
 
+// Define Harvest configuration (can be moved to a config file)
+const HARVEST_INTERVAL_TICKS = 3600 * 60; // 1 hour (assuming 60 TPS)
+const HARVEST_DURATION_TICKS = 600 * 60;  // 10 minutes (assuming 60 TPS)
+
 // Extend the World type definition if necessary (or use a separate state object)
 interface GameWorld extends World {
 	currentTimeTicks: number;
@@ -105,11 +109,28 @@ startServer((world) => {
 	gameWorld.ticksPerHour = TICKS_PER_HOUR;
 	gameWorld.ticksPerDay = TICKS_PER_DAY;
 
+	let wasHarvestTime = false; // Track previous state
+
 	// Set up the global tick interval
 	setInterval(() => {
+		const previousTick = gameWorld.currentTimeTicks;
 		gameWorld.currentTimeTicks++;
+		const currentTick = gameWorld.currentTimeTicks;
+
+		// Check harvest window state change
+		const isCurrentlyHarvestTime = (currentTick % HARVEST_INTERVAL_TICKS) < HARVEST_DURATION_TICKS;
+
+		if (isCurrentlyHarvestTime && !wasHarvestTime) {
+			console.log(`Harvest window OPENED at tick ${currentTick}. Duration: ${HARVEST_DURATION_TICKS} ticks.`);
+			logEvent({ type: "harvest_window_opened", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
+		} else if (!isCurrentlyHarvestTime && wasHarvestTime) {
+			console.log(`Harvest window CLOSED at tick ${currentTick}.`);
+			logEvent({ type: "harvest_window_closed", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
+		}
+		wasHarvestTime = isCurrentlyHarvestTime; // Update state for next tick
+
 		// Optional: Log time periodically for debugging
-		if (gameWorld.currentTimeTicks % 10000 === 0) {
+		if (gameWorld.currentTimeTicks % 10000 === 0) { // User changed this manually
 		    console.log(`Current Time Ticks: ${gameWorld.currentTimeTicks}`);
 		}
 	}, 1000 / 60); // Assuming a 60 TPS simulation rate

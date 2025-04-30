@@ -2,6 +2,11 @@ import { Vector3, World } from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
 import { Lake } from "../Lake";
 import { logEvent } from "../logger";
+import { isWithinWindow } from "../utils/timeUtils";
+
+// Harvesting schedule configuration
+const HARVEST_INTERVAL_TICKS = 3600 * 60; // 1 hour (assuming 60 TPS)
+const HARVEST_DURATION_TICKS = 600 * 60;  // 10 minutes (assuming 60 TPS)
 
 interface FishResult {
 	success: boolean;
@@ -58,6 +63,30 @@ export class FishingBehavior implements AgentBehavior {
 	): string | void {
 		if (toolName === "cast_rod") {
 			console.log("Fishing tool called");
+
+			// --- Time Check ---
+			const gameWorld = agent.world as any; // Cast to get time properties
+			const currentTime = gameWorld.currentTimeTicks;
+			const isHarvestTime = isWithinWindow(currentTime, HARVEST_INTERVAL_TICKS, HARVEST_DURATION_TICKS);
+
+			logEvent({
+				type: "agent_harvest_time_check",
+				agentId: agent.id,
+				agentName: agent.name,
+				currentTimeTicks: currentTime,
+				interval: HARVEST_INTERVAL_TICKS,
+				duration: HARVEST_DURATION_TICKS,
+				isHarvestTime: isHarvestTime
+			});
+
+			if (!isHarvestTime) {
+				const nextWindowStart = Math.ceil(currentTime / HARVEST_INTERVAL_TICKS) * HARVEST_INTERVAL_TICKS;
+				const ticksUntilStart = nextWindowStart - currentTime;
+				const secondsUntilStart = (ticksUntilStart / (gameWorld.ticksPerHour / 3600)).toFixed(1);
+				console.log(`${agent.name} tried to fish outside the window. Current: ${currentTime}, Harvest: ${isHarvestTime}. Next window in ${secondsUntilStart}s`);
+				return `It's not the right time to fish. The next fishing window opens in about ${secondsUntilStart} seconds.`;
+			}
+			// --- End Time Check ---
 
 			// Log the attempt
 			logEvent({
