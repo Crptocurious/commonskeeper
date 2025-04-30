@@ -32,6 +32,7 @@ import {
 	PlayerEvent,
 	Vector3,
 	EntityEvent,
+	World,
 } from "hytopia";
 
 import worldMap from "./assets/map.json";
@@ -66,6 +67,17 @@ const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 }
 };
 
+// Define Time configuration
+const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
+const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
+
+// Extend the World type definition if necessary (or use a separate state object)
+interface GameWorld extends World {
+	currentTimeTicks: number;
+	ticksPerHour: number;
+	ticksPerDay: number;
+}
+
 // Helper to send lake status to UI (now only used as an event handler)
 function sendLakeStatus(world: any, lake: any) {
 	const { stock, capacity } = lake.getState();
@@ -86,6 +98,22 @@ function sendLakeStatus(world: any, lake: any) {
 lake.on('lakeUpdated', sendLakeStatus);
 
 startServer((world) => {
+	const gameWorld = world as GameWorld;
+
+	// Initialize time properties
+	gameWorld.currentTimeTicks = 0;
+	gameWorld.ticksPerHour = TICKS_PER_HOUR;
+	gameWorld.ticksPerDay = TICKS_PER_DAY;
+
+	// Set up the global tick interval
+	setInterval(() => {
+		gameWorld.currentTimeTicks++;
+		// Optional: Log time periodically for debugging
+		if (gameWorld.currentTimeTicks % 10000 === 0) {
+		    console.log(`Current Time Ticks: ${gameWorld.currentTimeTicks}`);
+		}
+	}, 1000 / 60); // Assuming a 60 TPS simulation rate
+
 	/**
 	 * Enable debug rendering of the physics simulation.
 	 * This will overlay lines in-game representing colliders,
@@ -257,6 +285,8 @@ startServer((world) => {
         You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
 
         When you have nothing else to do, you can often be found fishing at the pier, or maybe you can come up with something else to do.
+
+        You have access to the current simulation time in your state (currentTimeTicks, ticksPerHour, ticksPerDay). If someone asks you for the time, report the current tick count. You can calculate the current hour by floor(currentTimeTicks / ticksPerHour) % 24 and the current day by floor(currentTimeTicks / ticksPerDay).
 
         You spawn at the pier.
         ${generalAgentInstructions}`,

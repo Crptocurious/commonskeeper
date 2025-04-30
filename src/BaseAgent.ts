@@ -289,6 +289,20 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
 		state.energy = energyState.currentEnergy;
 		state.maxEnergy = energyState.maxEnergy;
 		state.inventory = Array.from(this.inventory.values()); // Keep inventory logic here
+
+        // Add time information from the world state
+        if (this.world) {
+            const gameWorld = this.world as any; // Cast to access custom properties
+            if (gameWorld.currentTimeTicks !== undefined) {
+                state.currentTimeTicks = gameWorld.currentTimeTicks;
+                state.ticksPerHour = gameWorld.ticksPerHour;
+                state.ticksPerDay = gameWorld.ticksPerDay;
+                // Optionally calculate and add current hour/day
+                // state.currentHour = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerHour) % 24;
+                // state.currentDay = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerDay);
+            }
+        }
+
 		return state;
 	}
 
