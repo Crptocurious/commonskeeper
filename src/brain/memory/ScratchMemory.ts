@@ -19,12 +19,22 @@ export interface Memory {
   timestamp: number;
 }
 
+export interface ChatMemory extends Memory {
+  type: 'chat';
+  content: {
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+    originalSpeakerType?: 'Agent' | 'Player' | 'Environment';
+  };
+}
+
 export class ScratchMemory {
   private lakeState: LakeObservation | null = null;
   private agentEnergies: Map<string, AgentEnergyObservation> = new Map();
   private selfId: string;
   private memories: Memory[] = []; // Array to store various types of memories
   private maxMemories: number = 100; // Maximum number of memories to store
+  private maxChatHistory: number = 50; // Maximum number of chat messages to store
 
   constructor(selfId: string) {
     this.selfId = selfId;
@@ -148,5 +158,48 @@ export class ScratchMemory {
    */
   getSelfId(): string {
     return this.selfId;
+  }
+
+  /**
+   * Add a chat message to memory
+   */
+  addChatMemory(role: 'system' | 'user' | 'assistant', message: string, speakerType: 'Agent' | 'Player' | 'Environment', prefix: string = ''): void {
+    const chatMemory: ChatMemory = {
+      type: 'chat',
+      content: {
+        role: role,
+        content: `${prefix}${message}`,
+        originalSpeakerType: speakerType
+      },
+      timestamp: Date.now()
+    };
+    this.addMemory(chatMemory);
+  }
+
+  /**
+   * Get recent chat history
+   */
+  getChatHistory(options?: { 
+    maxCount?: number,
+    maxAgeMs?: number,
+    speakerTypes?: ('Agent' | 'Player' | 'Environment')[]
+  }): ChatMemory[] {
+    const { 
+      maxCount = this.maxChatHistory,
+      maxAgeMs = 5 * 60 * 1000, // Default 5 minutes
+      speakerTypes
+    } = options || {};
+
+    return this.getRecentMemories({ 
+      maxCount, 
+      types: ['chat'],
+      maxAgeMs 
+    }).filter((memory): memory is ChatMemory => {
+      if (memory.type !== 'chat') return false;
+      if (speakerTypes) {
+        return speakerTypes.includes(memory.content.originalSpeakerType);
+      }
+      return true;
+    });
   }
 } 

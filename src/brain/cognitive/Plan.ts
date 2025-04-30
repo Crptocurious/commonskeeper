@@ -14,7 +14,6 @@ interface ChatOptions {
 }
 
 export class Plan {
-    private chatHistory: ChatCompletionMessageParam[] = [];
     private llm: BaseLLM;
     private systemPrompt: string;
     private pendingAgentResponse?: {
@@ -58,7 +57,7 @@ IMPORTANT RULES FOR MOVEMENT ACTIONS:
    - If following someone, use: <action type="follow">{"targetPlayer": "player-name", "following": false}</action>
    - If pathfinding, wait until you arrive at your destination
 
-Some tools don't have any arguments. For example, you can just call the tool like this:
+Some tools don't have any arguments. For example, you can just call the fishing tool like this:
 <action type="cast_rod"></action>
 
 Be sure to use the tool format perfectly with the correct XML tags.
@@ -74,9 +73,39 @@ You should use this information to decide what to do next.
 
 Depending on your current state, you might need to take certain actions before you continue. For example, if you are following a player but you want to pathfind to a different location, you should first stop following the player, then call your pathfinding tool.
 
-You are not overly helpful, but you are friendly. Do not speak unless you have something to say or are spoken to. Try to listen more than you speak.`;
+You are not overly helpful, but you are friendly. Do not speak unless you have something to say or are spoken to. Try to listen more than you speak.
+You should not speak unless there is someone in your immediate vicinity.
+Whenever you are at pier, you can do fishing. Fishing helps to increase your energy.
+Remember that you do not need to speak to Environment. You just need to think in monologue and take actions.
+`;
 
         return `${formattingInstructions}\n${customPrompt}`.trim();
+    }
+
+    private convertToOpenAIMessages(agent: BaseAgent): ChatCompletionMessageParam[] {
+        // First get the system message
+        const messages: ChatCompletionMessageParam[] = [{
+            role: "system",
+            content: this.buildSystemPrompt(this.systemPrompt, agent)
+        }];
+
+        // Get chat history from scratch memory and convert to OpenAI format
+        const chatHistory = agent.getScratchMemory().getChatHistory({
+            maxCount: 20, // Limit to last 20 messages to keep context window manageable
+            maxAgeMs: 30 * 60 * 1000 // Last 30 minutes
+        });
+
+        console.log("Chat history:", chatHistory);
+
+        // Add chat messages directly since they're already in OpenAI format
+        chatHistory.forEach(chat => {
+            messages.push({
+                role: chat.content.role,
+                content: chat.content.content
+            });
+        });
+
+        return messages;
     }
 
     public async chat(agent: BaseAgent, options: ChatOptions) {
@@ -116,12 +145,14 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
     private async processChatMessage(agent: BaseAgent, options: ChatOptions) {
         const { type, message, player, agent: sourceAgent } = options;
         try {
-            if (this.chatHistory.length === 0) {
-                this.chatHistory.push({
-                    role: "system",
-                    content: this.buildSystemPrompt(this.systemPrompt, agent),
-                });
-            }
+            let prefix = "";
+            if (type === "Environment") prefix = "ENVIRONMENT: ";
+            else if (type === "Player" && player)
+                prefix = `[${player.username}]: `;
+            else if (type === "Agent" && sourceAgent)
+                prefix = `[${sourceAgent.name} (AI)]: `;
+
+            agent.getScratchMemory().addChatMemory('user', message, type, prefix);
 
             const currentState = agent.getCurrentState();
             const nearbyEntities = agent.getNearbyEntities().map((e) => ({
@@ -136,16 +167,10 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
                 maxCount: 5,
                 maxAgeMs: 5 * 60 * 1000 // Last 5 minutes
             });
+
             const recentAgentEnergies = scratchMemory.getFreshAgentEnergies();
             const lakeState = scratchMemory.getLakeState();
             const selfEnergy = scratchMemory.getSelfEnergy();
-
-            let prefix = "";
-            if (type === "Environment") prefix = "ENVIRONMENT: ";
-            else if (type === "Player" && player)
-                prefix = `[${player.username}]: `;
-            else if (type === "Agent" && sourceAgent)
-                prefix = `[${sourceAgent.name} (AI)]: `;
 
             const userMessage = `${prefix}${message}
 State: ${JSON.stringify(currentState)}
@@ -155,20 +180,20 @@ Recent Agent Energies: ${JSON.stringify(recentAgentEnergies)}
 Lake State: ${JSON.stringify(lakeState)}
 Self Energy History: ${JSON.stringify(selfEnergy)}`;
 
-            this.chatHistory.push({ role: "user", content: userMessage });
+            // Convert chat history to OpenAI format and add current message
+            const messages = this.convertToOpenAIMessages(agent);
+            messages.push({ role: "user", content: userMessage });
 
-            const response = await this.llm.generate(this.chatHistory);
+            const response = await this.llm.generate(messages);
             if (!response) return;
 
             console.log("Response:", response);
 
             this.parseXmlResponse(agent, response);
 
-            // Keep the assistant's text in chat history
-            this.chatHistory.push({
-                role: "assistant",
-                content: response,
-            });
+            // Store the assistant's response in scratch memory
+            agent.getScratchMemory().addChatMemory('assistant', response, "Agent", `[${agent.name} (AI)]: `);
+
         } catch (error) {
             console.error("OpenAI API error:", error);
         }
