@@ -16,6 +16,9 @@ import {
 import { logEvent } from "./logger";
 import { EnergyManager, type EnergyState } from "./EnergyManager";
 import { Plan } from "./brain/cognitive/Plan";
+import { Perceive } from "./brain/cognitive/Perceive";
+import { ScratchMemory } from "./brain/memory/ScratchMemory";
+import type { Lake } from "./Lake";
 
 /**
  * This is the interface that all behaviors must implement.
@@ -57,6 +60,8 @@ export class BaseAgent extends Entity {
 	private inventory: Map<string, InventoryItem> = new Map();
 	private energyManager: EnergyManager;
 	private plan: Plan;
+	private perceive: Perceive;
+	private scratchMemory: ScratchMemory;
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
@@ -72,8 +77,11 @@ export class BaseAgent extends Entity {
 		});
 
 		this.energyManager = new EnergyManager();
-		this.on(EntityEvent.TICK, this.onTickBehavior);
+		this.scratchMemory = new ScratchMemory(this.name);
+		this.perceive = new Perceive(this.name);
 		this.plan = new Plan(options.systemPrompt);
+		
+		this.on(EntityEvent.TICK, this.onTickBehavior);
 		
 		// Start inactivity checker when agent is created
 		this.inactivityCheckInterval = setInterval(() => {
@@ -101,28 +109,54 @@ export class BaseAgent extends Entity {
 		if (!this.isSpawned || !this.world) return;
 
 		const previousEnergyState = this.energyManager.getState();
- 		this.energyManager.decayTick(); // Delegate decay to manager
- 		const currentEnergyState = this.energyManager.getState();
- 
- 		// Log energy decay event here, with agent context
- 		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
- 			logEvent({
- 				type: "agent_energy_decay",
- 				agentId: this.id,
- 				agentName: this.name,
- 				energy: currentEnergyState.currentEnergy,
- 				decayAmount: previousEnergyState.currentEnergy - currentEnergyState.currentEnergy // Calculate actual decay
- 			});
- 		}
- 
- 		// Existing behavior updates
- 		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
- 
- 		// Check depletion status from manager
- 		if (currentEnergyState.isDepleted) {
- 			// Placeholder for potential death/starvation logic
- 			// console.log(`${this.name} has run out of energy!`);
- 		}
+		this.energyManager.decayTick();
+		const currentEnergyState = this.energyManager.getState();
+
+		// Update perception and memory
+		const nearbyEntities = this.getNearbyEntities();
+		
+		// Perceive nearby agents
+		const agentObservations = nearbyEntities
+			.filter(e => e.type === "Agent")
+			.map(e => {
+				const entity = this.world!.entityManager.getAllEntities().find(entity => entity.name === e.name);
+				if (entity instanceof BaseAgent) {
+					return {
+						agentId: e.name,
+						energyManager: entity.energyManager
+					};
+				}
+				return null;
+			})
+			.filter((obs): obs is { agentId: string; energyManager: EnergyManager } => obs !== null);
+
+		this.perceive.perceiveAgentEnergies(agentObservations);
+
+		// Perceive lake if it exists in the world
+		const lake = this.world.entityManager.getAllEntities().find(e => e.name === "Lake") as Lake | undefined;
+		if (lake?.getState) {
+			this.perceive.perceiveLake(lake);
+		}
+
+		// Log energy decay event here, with agent context
+		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
+			logEvent({
+				type: "agent_energy_decay",
+				agentId: this.id,
+				agentName: this.name,
+				energy: currentEnergyState.currentEnergy,
+				decayAmount: previousEnergyState.currentEnergy - currentEnergyState.currentEnergy
+			});
+		}
+
+		// Existing behavior updates
+		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
+
+		// Check depletion status from manager
+		if (currentEnergyState.isDepleted) {
+			// Placeholder for potential death/starvation logic
+			// console.log(`${this.name} has run out of energy!`);
+		}
 	};
 
 	public addBehavior(behavior: AgentBehavior) {
@@ -317,5 +351,9 @@ export class BaseAgent extends Entity {
 
 	public addInternalMonologue(thought: string) {
 		this.internalMonologue.push(thought);
+	}
+
+	public getScratchMemory(): ScratchMemory {
+		return this.scratchMemory;
 	}
 }

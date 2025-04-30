@@ -85,24 +85,4 @@ export class Perceive {
     return visibleAgents.length;
   }
 
-  /**
-   * Get the scratch memory containing all current observations
-   */
-  getScratchMemory(): ScratchMemory {
-    return this.scratchMemory;
-  }
-
-  /**
-   * Get fresh observations of agent energies
-   */
-  getFreshAgentObservations(maxAgeMs?: number): ReturnType<ScratchMemory['getFreshAgentEnergies']> {
-    return this.scratchMemory.getFreshAgentEnergies(maxAgeMs);
-  }
-
-  /**
-   * Get the most recent lake observation
-   */
-  getCurrentLakeState(): ReturnType<ScratchMemory['getLakeState']> {
-    return this.scratchMemory.getLakeState();
-  }
 } 

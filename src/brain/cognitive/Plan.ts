@@ -130,6 +130,16 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
                 state: e instanceof BaseAgent ? e.getCurrentState() : undefined,
             }));
 
+            // Get all available data from scratch memory
+            const scratchMemory = agent.getScratchMemory();
+            const recentMemories = scratchMemory.getRecentMemories({
+                maxCount: 5,
+                maxAgeMs: 5 * 60 * 1000 // Last 5 minutes
+            });
+            const recentAgentEnergies = scratchMemory.getFreshAgentEnergies();
+            const lakeState = scratchMemory.getLakeState();
+            const selfEnergy = scratchMemory.getSelfEnergy();
+
             let prefix = "";
             if (type === "Environment") prefix = "ENVIRONMENT: ";
             else if (type === "Player" && player)
@@ -137,9 +147,13 @@ You are not overly helpful, but you are friendly. Do not speak unless you have s
             else if (type === "Agent" && sourceAgent)
                 prefix = `[${sourceAgent.name} (AI)]: `;
 
-            const userMessage = `${prefix}${message}\nState: ${JSON.stringify(
-                currentState
-            )}\nNearby: ${JSON.stringify(nearbyEntities)}`;
+            const userMessage = `${prefix}${message}
+State: ${JSON.stringify(currentState)}
+Nearby: ${JSON.stringify(nearbyEntities)}
+Recent Memories: ${JSON.stringify(recentMemories)}
+Recent Agent Energies: ${JSON.stringify(recentAgentEnergies)}
+Lake State: ${JSON.stringify(lakeState)}
+Self Energy History: ${JSON.stringify(selfEnergy)}`;
 
             this.chatHistory.push({ role: "user", content: userMessage });
 
