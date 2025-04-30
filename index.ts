@@ -32,6 +32,7 @@ import {
 	PlayerEvent,
 	Vector3,
 	EntityEvent,
+	World,
 } from "hytopia";
 
 import worldMap from "./assets/map.json";
@@ -66,6 +67,26 @@ const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 }
 };
 
+// Define Time configuration
+const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
+const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
+
+// Define Harvest configuration (can be moved to a config file)
+const HARVEST_INTERVAL_TICKS = 3600 * 60; // 1 hour Cycle (50min Townhall + 10min Harvest) (assuming 60 TPS)
+const HARVEST_DURATION_TICKS = 600 * 60;  // 10 minutes (assuming 60 TPS)
+
+// Define Townhall configuration
+const TOWNHALL_OFFSET_TICKS = 0;      // Starts immediately at the beginning of the cycle
+const TOWNHALL_DURATION_TICKS = 3000 * 60; // Lasts 50 minutes (assuming 60 TPS)
+
+// Extend the World type definition if necessary (or use a separate state object)
+interface GameWorld extends World {
+	currentTimeTicks: number;
+	ticksPerHour: number;
+	ticksPerDay: number;
+    isTownhallActive: boolean; // Flag for Townhall phase
+}
+
 // Helper to send lake status to UI (now only used as an event handler)
 function sendLakeStatus(world: any, lake: any) {
 	const { stock, capacity } = lake.getState();
@@ -86,6 +107,59 @@ function sendLakeStatus(world: any, lake: any) {
 lake.on('lakeUpdated', sendLakeStatus);
 
 startServer((world) => {
+	const gameWorld = world as GameWorld;
+
+	// Initialize time properties
+	gameWorld.currentTimeTicks = 0;
+	gameWorld.ticksPerHour = TICKS_PER_HOUR;
+	gameWorld.ticksPerDay = TICKS_PER_DAY;
+    gameWorld.isTownhallActive = false; // Initialize flag
+
+	let wasHarvestTime = false; // Track previous state
+    let wasTownhallTime = false; // Track previous Townhall state
+
+	// Set up the global tick interval
+	setInterval(() => {
+        const previousTick = gameWorld.currentTimeTicks;
+		gameWorld.currentTimeTicks++;
+        const currentTick = gameWorld.currentTimeTicks;
+
+        // Calculate current position within the cycle
+        const tickInCycle = currentTick % HARVEST_INTERVAL_TICKS;
+
+        // --- Townhall Phase Check (Now happens first) ---
+        const isCurrentlyTownhallTime = tickInCycle < TOWNHALL_DURATION_TICKS;
+        gameWorld.isTownhallActive = isCurrentlyTownhallTime; // Update global flag
+
+        if (isCurrentlyTownhallTime && !wasTownhallTime) {
+            console.log(`Townhall phase STARTED at tick ${currentTick}. Duration: ${TOWNHALL_DURATION_TICKS} ticks.`);
+            logEvent({ type: "townhall_started", tick: currentTick, duration: TOWNHALL_DURATION_TICKS });
+        } else if (!isCurrentlyTownhallTime && wasTownhallTime) {
+            console.log(`Townhall phase ENDED at tick ${currentTick}.`);
+            logEvent({ type: "townhall_ended", tick: currentTick });
+        }
+        wasTownhallTime = isCurrentlyTownhallTime; // Update state for next tick
+
+        // --- Harvest Window Check (Now happens after Townhall) ---
+        const harvestStartTickInCycle = TOWNHALL_DURATION_TICKS; // Starts right after Townhall ends
+        // The harvest window ends at the end of the cycle interval
+        const isCurrentlyHarvestTime = tickInCycle >= harvestStartTickInCycle; // Harvest lasts until the end of the interval
+
+        if (isCurrentlyHarvestTime && !wasHarvestTime) {
+            console.log(`Harvest window OPENED at tick ${currentTick}. Duration: ${HARVEST_DURATION_TICKS} ticks.`);
+            logEvent({ type: "harvest_window_opened", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
+        } else if (!isCurrentlyHarvestTime && wasHarvestTime) {
+            console.log(`Harvest window CLOSED at tick ${currentTick}.`);
+            logEvent({ type: "harvest_window_closed", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
+        }
+        wasHarvestTime = isCurrentlyHarvestTime; // Update state for next tick
+
+		// Optional: Log time periodically for debugging
+		if (gameWorld.currentTimeTicks % 10000 === 0) { // User changed this manually
+		    console.log(`Current Time Ticks: ${gameWorld.currentTimeTicks}`);
+		}
+	}, 1000 / 60); // Assuming a 60 TPS simulation rate
+
 	/**
 	 * Enable debug rendering of the physics simulation.
 	 * This will overlay lines in-game representing colliders,
@@ -257,6 +331,8 @@ startServer((world) => {
         You act like a normal person, and your internal monologue is detailed and realistic. You think deeply about your actions and decisions.
 
         When you have nothing else to do, you can often be found fishing at the pier, or maybe you can come up with something else to do.
+
+        You have access to the current simulation time in your state (currentTimeTicks, ticksPerHour, ticksPerDay). If someone asks you for the time, report the current tick count. You can calculate the current hour by floor(currentTimeTicks / ticksPerHour) % 24 and the current day by floor(currentTimeTicks / ticksPerDay). Also mention if the Townhall meeting is currently active (using the isTownhallActive state).
 
         You spawn at the pier.
         ${generalAgentInstructions}`,

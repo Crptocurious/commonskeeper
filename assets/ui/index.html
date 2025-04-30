@@ -3,6 +3,12 @@
     <h2>Lake Status</h2>
     <p id="lake-status">Loading...</p>
 </div>
+
+<!-- Add Phase Display Panel -->
+<div id="phase-display-panel">
+    Current Phase: <span id="phase-text">Loading...</span>
+</div>
+
 <!-- Template for Agent Chat Bubble -->
 <template id="agent-chat">
     <div class="agent-chat">
@@ -166,6 +172,24 @@
 .inventory-item-quantity {
     color: #888;
 }
+
+/* Add styles for Phase Display */
+#phase-display-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    z-index: 10;
+}
+#phase-text {
+    font-weight: bold;
+    color: #ffcc00; /* Default color */
+}
 </style>
 
 <script>
@@ -254,6 +278,17 @@ hytopia.onData((data) => {
             console.error("Could not find thoughts-container element");
         }
     }
+
+    // --- Phase Update --- 
+    else if (data.type === 'phaseUpdate') {
+        const phaseTextEl = document.getElementById('phase-text');
+        if (phaseTextEl) {
+            phaseTextEl.textContent = data.phase || 'Unknown';
+            // Change color based on phase
+            phaseTextEl.style.color = data.phase === 'HARVEST' ? '#ff6b6b' : '#6bffb8'; // Red for Harvest, Green for Discussion
+        }
+    }
+
 });
 </script>
 

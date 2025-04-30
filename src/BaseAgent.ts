@@ -63,6 +63,8 @@ export class BaseAgent extends Entity {
 	private perceive: Perceive;
 	private scratchMemory: ScratchMemory;
 
+	public isDead: boolean = false; // Added property to track death state
+
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
 			name: options.name || "BaseAgent",
@@ -152,11 +154,13 @@ export class BaseAgent extends Entity {
 		// Existing behavior updates
 		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
 
+
 		// Check depletion status from manager
 		if (currentEnergyState.isDepleted) {
 			// Placeholder for potential death/starvation logic
 			// console.log(`${this.name} has run out of energy!`);
 		}
+
 	};
 
 	public addBehavior(behavior: AgentBehavior) {
@@ -211,6 +215,20 @@ export class BaseAgent extends Entity {
 		state.energy = energyState.currentEnergy;
 		state.maxEnergy = energyState.maxEnergy;
 		state.inventory = Array.from(this.inventory.values()); // Keep inventory logic here
+
+        // Add time information from the world state
+        if (this.world) {
+            const gameWorld = this.world as any; // Cast to access custom properties
+            if (gameWorld.currentTimeTicks !== undefined) {
+                state.currentTimeTicks = gameWorld.currentTimeTicks;
+                state.ticksPerHour = gameWorld.ticksPerHour;
+                state.ticksPerDay = gameWorld.ticksPerDay;
+                // Optionally calculate and add current hour/day
+                // state.currentHour = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerHour) % 24;
+                // state.currentDay = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerDay);
+            }
+        }
+
 		return state;
 	}
 
