@@ -11,7 +11,7 @@ export class EnergyManager {
     readonly maxEnergy: number;
     readonly decayRate: number;
 
-    constructor(maxEnergy: number = 100, decayRate: number = 0.01) {
+    constructor(maxEnergy: number = 100, decayRate: number = 0.001) {
         this.maxEnergy = maxEnergy;
         this.decayRate = decayRate;
         this.currentEnergy = this.maxEnergy; // Start full

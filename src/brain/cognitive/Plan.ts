@@ -117,11 +117,11 @@ export class Plan {
 
   /**
    * Parse the LLM's response for <monologue> and <action> tags.
+   * Now supports multiple actions in sequence.
    */
   private parseXmlResponse(text: string): PlanResult {
     let monologue = "";
-    let action = "";
-    let args = {};
+    let actions: Array<{type: string, args?: Record<string, any>}> = [];
     let reasoning = "Default reasoning";
 
     // Extract monologue
@@ -134,50 +134,44 @@ export class Plan {
       }
     }
 
-    // Extract action with JSON
-    const actionRegex = /<action>([\s\S]*?)<\/action>/g;
+    // Extract all actions
+    const actionRegex = /<action type="([^"]+)"(?:>({[\s\S]*?})<\/action>|><\/action>)/g;
     let actionMatch;
     while ((actionMatch = actionRegex.exec(text)) !== null) {
-      const actionBody = actionMatch[1]?.trim();
-      if (actionBody) {
+      const actionType = actionMatch[1];
+      const actionArgs = actionMatch[2];
+      
+      if (actionType) {
         try {
-          const parsed = JSON.parse(actionBody);
-          action = parsed.action || "speak";
-          args = parsed.args || {};
-          reasoning = parsed.reasoning || "No reasoning provided";
+          const action = {
+            type: actionType,
+            args: actionArgs ? JSON.parse(actionArgs) : undefined
+          };
+          actions.push(action);
         } catch (e) {
-          console.error("Failed to parse action JSON:", e);
+          console.error("Failed to parse action:", e);
         }
       }
     }
 
-    // If no action was found in the correct format, try to extract just JSON
-    if (!action) {
-      try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          action = parsed.action || "speak";
-          args = parsed.args || {};
-          reasoning = parsed.reasoning || "No reasoning provided";
-        }
-      } catch (e) {
-        console.error("Failed to parse JSON fallback:", e);
-      }
-    }
-
-    // If still no action, provide a fallback
-    if (!action) {
-      action = "speak";
-      args = { message: "I'm considering what to do next." };
+    // If no actions were found, provide a fallback
+    if (actions.length === 0) {
+      actions.push({
+        type: "speak",
+        args: { message: "I'm considering what to do next." }
+      });
       reasoning = "Fallback due to parsing error";
     }
 
+    // Return the first action as the main one, but include all actions in the args
     return {
-      action,
-      args,
+      action: actions[0]?.type || "speak",
+      args: actions[0] ? {
+        ...(actions[0].args || {}),
+        chainedActions: actions.slice(1)  // Include subsequent actions in the chain
+      } : { message: "I'm considering what to do next." },
       reasoning,
-      monologue: monologue || reasoning, // Use reasoning as fallback monologue
+      monologue: monologue || reasoning
     };
   }
 
@@ -186,49 +180,52 @@ export class Plan {
    */
   private buildPlanningSystemPrompt(): string {
     return `
-    You are the planning module for an AI agent in a virtual world. 
-    Your job is to decide what action the agent should take next.
-    
-    Based on the agent's current state, nearby entities, and recent memories,
-    you will decide the most appropriate next action.
-    
-    IMPORTANT: First think through your reasoning within <monologue> tags.
-    Then provide your decision as a JSON object wrapped in <action> tags.
-    
-    Example:
-    <monologue>
-    I see the agent's energy is low at 30%, and there's a lake nearby with fish.
-    The agent should go to the lake to fish and restore energy.
-    </monologue>
-    
-    <action>
-    {
-      "action": "pathfindTo",
-      "args": {
-        "targetName": "Lake"
-      },
-      "reasoning": "The agent needs to replenish energy and the lake has fish."
-    }
-    </action>
-    
-    The JSON object should have these fields:
-    - action: The name of the action to take (must be a valid action in the game)
-    - args: An object containing any arguments needed for the action
-    - reasoning: A brief explanation of why you chose this action
-    
-    Available actions include:
-    - speak: Say something to nearby agents or players (args: {message: string})
-    - pathfindTo: Move to a location (args: {targetName: string} or {position: {x, y, z}})
-    - follow: Follow an entity (args: {targetPlayer: string, following: boolean})
-    - gatherResource: Collect a resource (args: {resourceType: string})
-    - useItem: Use an item from inventory (args: {itemName: string})
-    
-    Make your decision based on:
-    1. The current state of the agent (energy, inventory, etc.)
-    2. The environment trigger that initiated this planning
-    3. Nearby entities that might be interacted with
-    4. Recent memories and past experiences
-    `;
+You are the planning module for an AI agent in a video game.
+You must never reveal your chain-of-thought publicly.
+When you think internally, wrap that in <monologue>...</monologue>.
+
+Always include your inner monologue before you take any actions.
+
+To take actions, use one or more action tags:
+<action type="XYZ">{...json args...}</action>
+
+Each action must contain valid JSON with the required parameters.
+If there are no arguments, you omit the {} empty object, like this:
+<action type="XYZ"></action>
+
+You may use multiple actions at once. For example, you can pathfind to a location and then start fishing:
+<action type="pathfindTo">{"targetName": "Lake"}</action>
+<action type="cast_rod"></action>
+
+IMPORTANT RULES FOR MOVEMENT ACTIONS:
+1. You cannot perform multiple movement-related actions at the same time (pathfindTo, follow)
+2. Before starting a new movement action, you MUST stop your current movement:
+   - If following someone, use: <action type="follow">{"targetPlayer": "player-name", "following": false}</action>
+   - If pathfinding, wait until you arrive at your destination
+
+Available actions include:
+- speak: Say something to nearby agents or players (args: {message: string})
+- pathfindTo: Move to a location (args: {targetName: string} or {position: {x, y, z}})
+- follow: Follow an entity (args: {targetPlayer: string, following: boolean})
+- gatherResource: Collect a resource (args: {resourceType: string})
+- useItem: Use an item from inventory (args: {itemName: string})
+- cast_rod: Start fishing (no arguments needed)
+
+Be sure to use the action format perfectly with the correct XML tags.
+Many tasks will require you to chain action calls. Moving to a location and then starting an activity is a common example.
+
+You are given information about the world around you, and about your current state.
+You should use this information to decide what to do next.
+
+Depending on your current state, you might need to take certain actions before you continue.
+For example, if you are following a player but you want to pathfind to a different location,
+you should first stop following the player, then call your pathfinding action.
+
+Make your decisions based on:
+1. The current state of the agent (energy, inventory, etc.)
+2. The environment trigger that initiated this planning
+3. Nearby entities that might be interacted with
+4. Recent memories and past experiences`;
   }
 
   /**
