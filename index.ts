@@ -60,36 +60,39 @@ import { logEvent } from "./src/logger";
 const agents: BaseAgent[] = [];
 const CHAT_RANGE = 10; // Distance in blocks for proximity chat
 
-// Instantiate the lake globally
-const lake = new Lake(10, 5, 1); // Capacity=100, InitialStock=50, RegenRate=1 fish/tick
+// Instantiate the lake globally - Adjusted capacity/stock/regen based on prompt context if needed
+// Keeping original values for now: Capacity=10, InitialStock=5
+const lake = new Lake(10, 5, 1);
 
 const LOCATIONS = {
 	pier: { x: 31.5, y: 3, z: 59.5 }
 };
 
-// Define Time configuration
+// --- Time and Phase Configuration ---
 const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
 const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
+const HARVEST_WINDOW_DURATION_MINUTES = 10;
+const TOWNHALL_DURATION_MINUTES = 50;
 
-// Define Harvest configuration (can be moved to a config file)
-const HARVEST_INTERVAL_TICKS = 3600 * 60; // 1 hour Cycle (50min Townhall + 10min Harvest) (assuming 60 TPS)
-const HARVEST_DURATION_TICKS = 600 * 60;  // 10 minutes (assuming 60 TPS)
+const ticksPerMinute = TICKS_PER_HOUR / 60; // Calculate ticks per minute
+const harvestWindowTicks = HARVEST_WINDOW_DURATION_MINUTES * ticksPerMinute;
+const townhallDurationTicks = TOWNHALL_DURATION_MINUTES * ticksPerMinute;
+const totalCycleTicks = harvestWindowTicks + townhallDurationTicks; // Total ticks in a 60-minute cycle
 
-// Define Townhall configuration
-const TOWNHALL_OFFSET_TICKS = 0;      // Starts immediately at the beginning of the cycle
-const TOWNHALL_DURATION_TICKS = 3000 * 60; // Lasts 50 minutes (assuming 60 TPS)
+// Define game phase type
+type GamePhase = 'HARVEST' | 'TOWNHALL';
 
 // Extend the World type definition if necessary (or use a separate state object)
 interface GameWorld extends World {
 	currentTimeTicks: number;
 	ticksPerHour: number;
 	ticksPerDay: number;
-    isTownhallActive: boolean; // Flag for Townhall phase
+    currentPhase: GamePhase; // Track the current phase
 }
 
-// Helper to send lake status to UI (now only used as an event handler)
-function sendLakeStatus(world: any, lake: any) {
-	const { stock, capacity } = lake.getState();
+// Helper to send lake status to UI (now used directly after changes)
+function sendLakeStatusUpdate(world: World, lakeInstance: Lake) {
+	const { stock, capacity } = lakeInstance.getState();
 	const playerEntities = world.entityManager.getAllPlayerEntities();
 	playerEntities.forEach((playerEntity: any) => {
 		const player = playerEntity.player;
@@ -97,14 +100,30 @@ function sendLakeStatus(world: any, lake: any) {
 			player.ui.sendData({
 				type: 'lakeUpdate',
 				stock: stock,
-				capacity: capacity
+				capacity: capacity,
+                isCollapsed: lakeInstance.isCollapsed() // Also send collapse status
 			});
 		}
 	});
 }
 
-// Register the event handler for lake updates
-lake.on('lakeUpdated', sendLakeStatus);
+// Placeholder for sending phase updates to UI
+function sendPhaseUpdate(world: World, phase: GamePhase) {
+    console.log(`UI Update: Phase changed to ${phase}`);
+    const playerEntities = world.entityManager.getAllPlayerEntities();
+	playerEntities.forEach((playerEntity: any) => {
+		const player = playerEntity.player;
+		if (player && player.ui) {
+			player.ui.sendData({
+				type: 'phaseUpdate',
+				phase: phase
+			});
+		}
+	});
+}
+
+// Remove lake update event handler as we call update manually now
+// lake.on('lakeUpdated', sendLakeStatus);
 
 startServer((world) => {
 	const gameWorld = world as GameWorld;
@@ -113,52 +132,70 @@ startServer((world) => {
 	gameWorld.currentTimeTicks = 0;
 	gameWorld.ticksPerHour = TICKS_PER_HOUR;
 	gameWorld.ticksPerDay = TICKS_PER_DAY;
-    gameWorld.isTownhallActive = false; // Initialize flag
+    // Initialize phase - Start with TOWNHALL before the first HARVEST cycle begins at tick 0
+    gameWorld.currentPhase = 'TOWNHALL';
 
-	let wasHarvestTime = false; // Track previous state
-    let wasTownhallTime = false; // Track previous Townhall state
+    console.log(`Simulation Config: TicksPerMin=${ticksPerMinute}, HarvestTicks=${harvestWindowTicks}, TownhallTicks=${townhallDurationTicks}, CycleTicks=${totalCycleTicks}`);
+
 
 	// Set up the global tick interval
 	setInterval(() => {
-        const previousTick = gameWorld.currentTimeTicks;
-		gameWorld.currentTimeTicks++;
         const currentTick = gameWorld.currentTimeTicks;
 
-        // Calculate current position within the cycle
-        const tickInCycle = currentTick % HARVEST_INTERVAL_TICKS;
+        // Determine current position within the cycle
+        const tickInCycle = currentTick % totalCycleTicks;
 
-        // --- Townhall Phase Check (Now happens first) ---
-        const isCurrentlyTownhallTime = tickInCycle < TOWNHALL_DURATION_TICKS;
-        gameWorld.isTownhallActive = isCurrentlyTownhallTime; // Update global flag
+        // --- Start of Cycle / Trigger Regeneration / Start HARVEST Phase ---
+        if (tickInCycle === 0) {
+            console.log(`Tick ${currentTick}: Starting new cycle. Regenerating lake.`);
+            lake.regenerate(); // GOVSIM Regeneration (doubles stock)
+            sendLakeStatusUpdate(gameWorld, lake); // Update UI post-regeneration
 
-        if (isCurrentlyTownhallTime && !wasTownhallTime) {
-            console.log(`Townhall phase STARTED at tick ${currentTick}. Duration: ${TOWNHALL_DURATION_TICKS} ticks.`);
-            logEvent({ type: "townhall_started", tick: currentTick, duration: TOWNHALL_DURATION_TICKS });
-        } else if (!isCurrentlyTownhallTime && wasTownhallTime) {
-            console.log(`Townhall phase ENDED at tick ${currentTick}.`);
-            logEvent({ type: "townhall_ended", tick: currentTick });
+            // Set phase to HARVEST
+            if (gameWorld.currentPhase !== 'HARVEST') {
+                gameWorld.currentPhase = 'HARVEST';
+                logEvent({ type: 'PHASE_START', phase: 'HARVEST', tick: currentTick, durationTicks: harvestWindowTicks });
+                sendPhaseUpdate(gameWorld, gameWorld.currentPhase); // Update UI
+                console.log(`Tick ${currentTick}: Phase changed to HARVEST.`);
+            }
         }
-        wasTownhallTime = isCurrentlyTownhallTime; // Update state for next tick
 
-        // --- Harvest Window Check (Now happens after Townhall) ---
-        const harvestStartTickInCycle = TOWNHALL_DURATION_TICKS; // Starts right after Townhall ends
-        // The harvest window ends at the end of the cycle interval
-        const isCurrentlyHarvestTime = tickInCycle >= harvestStartTickInCycle; // Harvest lasts until the end of the interval
+        // --- End of Harvest Window / Trigger Collapse Check / Start TOWNHALL Phase ---
+        // This check happens exactly at the tick marking the end of the harvest window
+        if (tickInCycle === harvestWindowTicks) {
+            console.log(`Tick ${currentTick}: Harvest window ending. Checking lake collapse.`);
+            lake.checkCollapse(); // Check for collapse based on threshold
+            sendLakeStatusUpdate(gameWorld, lake); // Update UI post-collapse check
 
-        if (isCurrentlyHarvestTime && !wasHarvestTime) {
-            console.log(`Harvest window OPENED at tick ${currentTick}. Duration: ${HARVEST_DURATION_TICKS} ticks.`);
-            logEvent({ type: "harvest_window_opened", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
-        } else if (!isCurrentlyHarvestTime && wasHarvestTime) {
-            console.log(`Harvest window CLOSED at tick ${currentTick}.`);
-            logEvent({ type: "harvest_window_closed", tick: currentTick, interval: HARVEST_INTERVAL_TICKS, duration: HARVEST_DURATION_TICKS });
+            // Set phase to TOWNHALL
+            if (gameWorld.currentPhase !== 'TOWNHALL') {
+                gameWorld.currentPhase = 'TOWNHALL';
+                logEvent({ type: 'PHASE_START', phase: 'TOWNHALL', tick: currentTick, durationTicks: townhallDurationTicks });
+                sendPhaseUpdate(gameWorld, gameWorld.currentPhase); // Update UI
+                 console.log(`Tick ${currentTick}: Phase changed to TOWNHALL.`);
+            }
         }
-        wasHarvestTime = isCurrentlyHarvestTime; // Update state for next tick
+
+        // --- Agent Processing (happens every tick, agent decides action based on phase) ---
+        // Agents need to access gameWorld.currentPhase or gameWorld.currentTimeTicks
+        // to determine if they should perform harvest actions or townhall actions.
+        // Example (agents must implement phase-aware logic):
+        agents.forEach(agent => {
+            // Agent's internal update logic should check gameWorld.currentPhase
+            // agent.update(gameWorld); // Pass the world state including phase
+        });
+
 
 		// Optional: Log time periodically for debugging
-		if (gameWorld.currentTimeTicks % 10000 === 0) { // User changed this manually
-		    console.log(`Current Time Ticks: ${gameWorld.currentTimeTicks}`);
+		if (currentTick % (TICKS_PER_HOUR / 4) === 0) { // Log roughly every 15 minutes
+		    console.log(`Tick: ${currentTick}, Phase: ${gameWorld.currentPhase}, Lake Stock: ${lake.getState().stock}`);
 		}
+
+        // Increment tick
+		gameWorld.currentTimeTicks++;
+
 	}, 1000 / 60); // Assuming a 60 TPS simulation rate
+
 
 	/**
 	 * Enable debug rendering of the physics simulation.
@@ -182,25 +219,32 @@ startServer((world) => {
 	world.loadMap(worldMap);
 
 	const lakeState = lake.getState();
+    const isInitiallyCollapsed = lake.isCollapsed(); // Check initial state after constructor potentially collapses it
 	logEvent({
 		type: "game_start",
+        tick: gameWorld.currentTimeTicks,
 		lake_config: {
 			capacity: lakeState.capacity,
-			initial_stock: lakeState.stock,
-			regen_rate: lake.regenRate
+			initial_stock_value: lakeState.stock, // Stock value *after* constructor check
+            is_initially_collapsed: isInitiallyCollapsed,
+			// regen_rate: lake.regenRate // regenRate less relevant now
+            collapse_threshold: 0.10 // Explicitly log threshold used
 		},
+        phase_config: {
+            harvest_window_ticks: harvestWindowTicks,
+            townhall_duration_ticks: townhallDurationTicks,
+            total_cycle_ticks: totalCycleTicks
+        },
 		agents: agents.map(agent => ({
 			name: agent.name
 		}))
 	});
+     // Send initial phase state
+    logEvent({ type: 'PHASE_START', phase: gameWorld.currentPhase, tick: gameWorld.currentTimeTicks, durationTicks: townhallDurationTicks }); // Log initial TOWNHALL phase
+    sendPhaseUpdate(gameWorld, gameWorld.currentPhase);
+    // Send initial lake state
+    sendLakeStatusUpdate(gameWorld, lake);
 
-	/**
-	 * World Tick Event: Regenerate Lake (Attempting via EntityEvent.TICK on world)
-	 */
-	world.on(EntityEvent.TICK, (payload: any) => {
-		const { deltaTimeMs } = payload as { deltaTimeMs: number };
-		lake.regenerate(world);
-	});
 
 	/**
 	 * Handle player joining the game. The onPlayerJoin
@@ -236,7 +280,9 @@ startServer((world) => {
 			"Press \\ to enter or exit debug view."
 		);
 
-		sendLakeStatus(world, lake);
+		// Send initial states to player UI on join
+        sendLakeStatusUpdate(world, lake); // Send current lake state
+        sendPhaseUpdate(world, gameWorld.currentPhase); // Send current phase
 
 		player.ui.sendData({
 			type: "agentThoughts",
@@ -335,7 +381,9 @@ startServer((world) => {
         You have access to the current simulation time in your state (currentTimeTicks, ticksPerHour, ticksPerDay). If someone asks you for the time, report the current tick count. You can calculate the current hour by floor(currentTimeTicks / ticksPerHour) % 24 and the current day by floor(currentTimeTicks / ticksPerDay). Also mention if the Townhall meeting is currently active (using the isTownhallActive state).
 
         You spawn at the pier.
-        ${generalAgentInstructions}`,
+        ${generalAgentInstructions}
+
+        Make sure to mention the current game phase (using the state.currentPhase property) in your responses.`,
 	});
 	jimTheFisherman.addBehavior(new FollowBehavior());
 	jimTheFisherman.addBehavior(new PathfindingBehavior());

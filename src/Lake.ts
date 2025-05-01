@@ -8,6 +8,8 @@ export class Lake extends EventEmitter {
   private currentStock: number;
   readonly capacity: number;
   readonly regenRate: number; // Fish regenerated per tick/call to regenerate()
+  private _isCollapsed: boolean = false; // Persistent collapse state
+  private readonly COLLAPSE_THRESHOLD_PERCENT = 0.10; // 10% threshold
 
   /**
    * Initializes the Lake resource.
@@ -21,32 +23,97 @@ export class Lake extends EventEmitter {
     this.currentStock = Math.min(initialStock, capacity); // Ensure initial stock doesn't exceed capacity
     this.regenRate = regenRate;
 
-    if (this.currentStock <= 0) {
-        console.warn("Lake initialized with zero or negative stock.");
-        // Future: Consider emitting collapse event immediately if starting collapsed
+    // Initialize collapse state based on initial stock
+    if (this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
+      console.warn(`Lake initialized below or at collapse threshold (${this.COLLAPSE_THRESHOLD_PERCENT * 100}%). Initial stock: ${this.currentStock}. Collapsing immediately.`);
+      this._isCollapsed = true;
+      this.currentStock = 0; // Set stock to 0 if starting collapsed
+      // Log initial collapse if starting below threshold
+       logEvent({
+           type: "lake_collapse",
+           reason: "Initial stock below threshold",
+           initialStock: initialStock, // Log the stock it started with
+           threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
+           capacity: this.capacity,
+       });
+    } else if (this.currentStock <= 0) {
+        // Handle case where initial stock is <= 0 but somehow above threshold (unlikely with threshold > 0)
+        console.warn("Lake initialized with zero or negative stock. Collapsing immediately.");
+        this._isCollapsed = true;
+        this.currentStock = 0;
+        logEvent({
+           type: "lake_collapse",
+           reason: "Initial stock zero or negative",
+           initialStock: initialStock,
+           capacity: this.capacity,
+       });
     }
   }
 
   /**
-   * Updates the fish stock based on regeneration rate.
-   * Called periodically by the main simulation loop (e.g., once per tick).
+   * Updates the fish stock by doubling it, up to capacity.
+   * Does nothing if the lake is collapsed.
+   * Should be called periodically (e.g., once per round/day) by the simulation.
    * Emits 'lakeUpdated' event if world is provided.
    */
   regenerate(world?: any): void {
-    if (this.currentStock <= 0) {
-        // Optional: Lake might not regenerate if fully collapsed, depending on desired mechanics
-        // return;
+    // Do not regenerate if the lake is permanently collapsed
+    if (this.isCollapsed()) {
+        return;
     }
-    if (this.currentStock < this.capacity) {
-      this.currentStock += this.regenRate;
-      // Ensure stock does not exceed capacity after regeneration
-      if (this.currentStock > this.capacity) {
-        this.currentStock = this.capacity;
-      }
+
+    const stockBefore = this.currentStock;
+    let stockAfter = stockBefore; // Initialize with before value
+
+    // Doubling rule
+    if (this.currentStock > 0 && this.currentStock < this.capacity) {
+        stockAfter = this.currentStock * 2;
+        // Ensure stock does not exceed capacity after regeneration
+        if (stockAfter > this.capacity) {
+            stockAfter = this.capacity;
+        }
+        this.currentStock = stockAfter;
     }
+    // Else: stock is 0 or at capacity, no change from doubling rule
+
+    // Log the regeneration event if stock changed
+    if (stockAfter !== stockBefore) {
+        logEvent({
+            type: "lake_regenerate",
+            stockBefore: stockBefore,
+            stockAfter: stockAfter,
+            capacity: this.capacity,
+            isCollapsed: this._isCollapsed // Should always be false here
+        });
+    }
+
     if (world) {
-      this.emit('lakeUpdated', world, this);
+        this.emit('lakeUpdated', world, this);
     }
+  }
+
+  /**
+   * Checks if the lake should collapse based on the current stock level.
+   * Should be called after all harvesting in a round/step is complete, before regeneration.
+   * Sets the persistent collapse state if the threshold is met.
+   */
+  checkCollapse(): void {
+      // Check only if not already collapsed
+      if (!this._isCollapsed && this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
+          console.warn(`Lake collapsed! Stock (${this.currentStock}) reached collapse threshold (${this.capacity * this.COLLAPSE_THRESHOLD_PERCENT}).`);
+          this._isCollapsed = true;
+          this.currentStock = 0; // Permanently deplete stock on collapse
+
+          // Log collapse event
+          logEvent({
+              type: "lake_collapse",
+              reason: "Stock dropped below threshold after harvest",
+              threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
+              stockAtCollapseTrigger: this.currentStock, // Will be 0 now
+              capacity: this.capacity,
+          });
+          this.emit(EVENT_COLLAPSE); // Emit collapse event
+      }
   }
 
   /**
@@ -61,8 +128,13 @@ export class Lake extends EventEmitter {
       return 0; // Cannot harvest zero or negative fish
     }
 
-    // Cannot harvest from a collapsed lake
+    // Cannot harvest from a permanently collapsed lake
+    if (this.isCollapsed()) {
+        return 0;
+    }
+    // Also ensure stock is positive (though should be guaranteed if not collapsed)
     if (this.currentStock <= 0) {
+        console.warn("Attempted to harvest from lake with stock <= 0, but not marked as collapsed. This shouldn't happen.");
         return 0;
     }
 
@@ -73,26 +145,15 @@ export class Lake extends EventEmitter {
     if (harvestedAmount > 0) {
       logEvent({
           type: "lake_harvest",
-          // agentId: agent?.id, // Ideally, pass agent info to harvest()
-          // agentName: agent?.name,
           requestedAmount: amount,
           harvestedAmount: harvestedAmount,
           stockRemaining: this.currentStock,
       });
-  }
-
-    // Check for collapse *after* harvesting
-    if (this.currentStock <= 0) {
-      console.warn(`Lake collapsed! Stock reached ${this.currentStock}.`);
-      // Future: Use an event emitter to signal collapse (e.g., this.eventEmitter.emit(EVENT_COLLAPSE);)
-
-      // Log collapse event
-      logEvent({
-        type: "lake_collapse",
-        stock: this.currentStock, // Should be <= 0
-        capacity: this.capacity,
-      });
     }
+
+    // Collapse check is now handled by checkCollapse() method, called externally by simulation loop
+    // Remove the immediate check from here:
+    // if (this.currentStock <= 0) { ... }
 
     if (world) {
       this.emit('lakeUpdated', world, this);
@@ -113,10 +174,10 @@ export class Lake extends EventEmitter {
   }
 
    /**
-   * Checks if the lake is currently collapsed (stock <= 0).
+   * Checks if the lake is currently in a permanently collapsed state.
    * @returns True if the lake is collapsed, false otherwise.
    */
   isCollapsed(): boolean {
-      return this.currentStock <= 0;
+      return this._isCollapsed;
   }
 } 
