@@ -50,6 +50,15 @@ export interface InventoryItem {
 	metadata?: Record<string, any>; // For things like fish weight, mineral value, etc.. whatever you want.
 }
 
+// Define ChatOptions type matching the one in Plan.ts
+type MessageType = "Player" | "Environment" | "Agent";
+interface ChatOptions {
+	type: MessageType;
+	message: string;
+	player?: Player;
+	agent?: BaseAgent;
+}
+
 export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
 	private internalMonologue: string[] = [];
@@ -265,10 +274,32 @@ export class BaseAgent extends Entity {
 			"Environment trigger for agent " + this.name + ":",
 			message
 		);
-		this.plan.chat(this, {
-			type: "Environment",
-			message,
-		});
+		// We can keep using the ChatOptions interface here too
+        const options: ChatOptions = {
+            type: "Environment",
+            message,
+        };
+		this.plan.chat(this, options);
+	}
+
+	/**
+	 * New method to handle chat messages originating from external sources (Players or other Agents).
+	 * This forwards the message to the agent's Plan module.
+	 */
+	public handleExternalChat(options: ChatOptions): void {
+		// Basic check to ensure it's not an Environment message passed incorrectly
+		if (options.type === "Environment") {
+			 console.warn(`Agent ${this.name} received an Environment message via handleExternalChat. Use handleEnvironmentTrigger instead.`);
+			 // Optionally, still process it or just return
+			 // this.plan.chat(this, options);
+			 return;
+		}
+		
+		// Log the reception for debugging
+		console.log(`Agent ${this.name} received external chat: Type=${options.type}, From=${options.player?.username || options.agent?.name || 'Unknown'}`);
+		
+		// Forward to the Plan module
+		this.plan.chat(this, options);
 	}
 
 	// Clean up interval when agent is destroyed

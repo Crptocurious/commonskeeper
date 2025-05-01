@@ -9,9 +9,10 @@ export interface EnergyState {
 export class EnergyManager {
     private currentEnergy: number;
     readonly maxEnergy: number;
-    readonly decayRate: number;
+    readonly decayRate: number; // Renamed for clarity: This is DECAY_PER_TICK
 
-    constructor(maxEnergy: number = 100, decayRate: number = 0.01) {
+    // Updated defaults: maxEnergy = 1000, decayRate calculated for ~6 cycles
+    constructor(maxEnergy: number = 1000, decayRate: number = 0.046) {
         this.maxEnergy = maxEnergy;
         this.decayRate = decayRate;
         this.currentEnergy = this.maxEnergy; // Start full
