@@ -46,9 +46,16 @@ import { TradeBehavior } from "./src/behaviors/TradeBehavior";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
 // import { AgentUpdateContext } from "./src/BaseAgent"; // Import the context interface
 import type { AgentUpdateContext } from "./src/BaseAgent"; // Corrected: Use type-only import
+import { EatBehavior } from "./src/behaviors/EatBehavior"; // Import the new behavior
 
 import { Lake } from "./src/Lake";
 import { logEvent } from "./src/logger";
+
+// --- Simulation Constants ---
+const MAX_ENERGY = 100; // Assuming this is the intended max energy
+const ENERGY_PER_FISH = 25; // Energy gained per fish eaten
+const LOW_ENERGY_THRESHOLD = 30; // Threshold below which agents try to eat
+// --- End Simulation Constants ---
 
 // --- Global Variables ---
 const agents: BaseAgent[] = []; // Global array to track spawned agents
@@ -96,6 +103,9 @@ const fishermanBehaviorConfigs: BehaviorConfig[] = [
     { type: FishingBehavior, args: ['lake'] }
 ];
 
+// *** ADD EatBehavior to the default list ***
+fishermanBehaviorConfigs.push({ type: EatBehavior });
+
 // --- Specific Agent Config Structure ---
 interface SpecificAgentConfig {
     name: string;
@@ -121,6 +131,12 @@ You are a fisherman fishing in a shared lake with 2 others (3 total). Your survi
 *   Your Inventory: state.inventory fish
 *   Lake Status: state.lakeStock (current fish)
 *   Townhall Reports: state.lastHarvestReports (dictionary of {agentName: fishCaught})
+
+**Energy & Survival:**
+*   You constantly lose energy. Actions cost energy.
+*   If energy hits 0, you die (simulation may end).
+*   Eat fish from your inventory to regain energy. Each fish restores ${ENERGY_PER_FISH} energy (up to ${MAX_ENERGY} max).
+*   Low Energy Auto-Eat: If energy drops below ${LOW_ENERGY_THRESHOLD} and you have fish, you will automatically eat one.
 
 **Schedule (1-hour cycle):**
 *   HARVEST phase: First ${HARVEST_WINDOW_DURATION_MINUTES} minutes (${harvestWindowTicks} ticks). ONLY time to fish. Fish one agent per tick (turn-based).
@@ -317,6 +333,17 @@ startServer((world) => {
     if (agents.length !== 3) {
         console.warn(`Expected 3 agents, but spawned ${agents.length}.`);
     }
+
+    // --- Added Startup Log Confirmation ---
+    console.log(`\n--- Simulation Initializing ---`);
+    console.log(`Starting Tick: ${gameWorld.currentTimeTicks}`); // Should output 0
+    const initialLakeState = lake.getState(); // Get current state after init
+    console.log(`Initial Lake Stock: ${initialLakeState.stock}/${initialLakeState.capacity}`); // Check initial stock
+    console.log(`Initial Lake Collapsed: ${lake.isCollapsed()}`);
+    console.log(`Number of Agents Spawned: ${agents.length}`); // Check agent count
+    console.log(`Initial Phase: ${gameWorld.currentPhase}`);
+    console.log(`--- Starting Game Loop ---`);
+    // --- End Startup Log Confirmation ---
 
 	// --- Game Loop ---
 	setInterval(() => {
