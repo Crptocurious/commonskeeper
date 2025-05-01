@@ -152,6 +152,39 @@
     line-height: 1.4;
 }
 
+/* --- Added Styles for Thought Expansion --- */
+.thought-text-content {
+    max-height: 4.2em; /* Approx 3 lines (3 * 1.4 line-height) */
+    overflow: hidden;
+    position: relative; 
+    margin-bottom: 5px; 
+    transition: max-height 0.3s ease-out;
+    word-wrap: break-word; 
+    /* Add white-space pre-wrap if you want to preserve line breaks from the thought */
+    white-space: pre-wrap; 
+}
+
+.thought-text-content.expanded {
+    max-height: 1000px; /* Effectively remove height limit */
+}
+
+.toggle-thoughts {
+    background-color: #555;
+    color: white;
+    border: none;
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 5px; /* Space above button */
+    display: inline-block; /* Default display managed by JS */
+}
+
+.toggle-thoughts:hover {
+    background-color: #777;
+}
+/* --- End Added Styles --- */
+
 /* Add these styles */
 .inventory-list {
     margin-top: 8px;
@@ -190,6 +223,50 @@
     font-weight: bold;
     color: #ffcc00; /* Default color */
 }
+
+/* --- Added/Modified Header Styles --- */
+.agent-header-info {
+    display: flex;
+    align-items: center; /* Vertically align items */
+    margin-bottom: 8px; /* Space below header */
+    flex-wrap: wrap; /* Allow wrapping if needed on small screens */
+}
+
+.agent-name {
+    font-weight: bold;
+    margin-right: 10px; /* Increased Space after name */
+    color: #e0e0e0; /* Lighter color for name */
+}
+
+.icon { /* Common icon styles */
+    width: 16px;
+    height: 16px;
+    /* flexbox alignment takes care of vertical */
+}
+
+.energy-icon {
+    margin-right: 2px; /* Small space before energy text */
+}
+
+.fish-icon {
+    margin-left: 8px; /* Space between energy and fish icon */
+    margin-right: 2px; /* Small space before fish count */
+}
+
+.agent-energy,
+.agent-inventory {
+    font-size: 0.9em;
+    color: #aaa;
+    /* margin-right removed, spacing controlled by fish-icon margin-left */
+}
+
+/* Remove E: and parentheses text, handled by alt text and structure */
+/* .agent-energy::before { content: "(E: "; } 
+.agent-energy::after { content: ")"; } 
+.agent-inventory::before { content: "("; } 
+.agent-inventory::after { content: ")"; }  */
+
+/* --- End Header Styles --- */
 </style>
 
 <script>
@@ -250,30 +327,62 @@ hytopia.onData((data) => {
     // --- Agent Thoughts Update ---
     else if (data.type === 'agentThoughts') {
         const container = document.getElementById('thoughts-container');
-        if (container) { // Add null check
-            container.innerHTML = data.agents.map(agent => {
-                // Format energy display (optional: could add a visual bar later)
+        if (container) { 
+            // Generate HTML for all agents
+            container.innerHTML = data.agents.map((agent, index) => {
+                const thoughtId = `thought-text-${index}`; // Unique ID for thought container
+                
+                // Energy Text
                 const energyText = agent.energy !== undefined && agent.maxEnergy !== undefined
-                    ? `${Math.round(agent.energy)} / ${agent.maxEnergy}`
+                    ? `${Math.round(agent.energy)}/${agent.maxEnergy}`
                     : 'N/A';
+                
+                // Fish Count - Find fish in inventory array
+                let fishCount = 0;
+                if (agent.inventory && Array.isArray(agent.inventory)) {
+                    const fishItem = agent.inventory.find(item => item.name === 'fish');
+                    fishCount = fishItem ? fishItem.quantity : 0;
+                }
 
+                // Sanitize thought text slightly
+                const safeThought = agent.lastThought?.replace(/</g, "&lt;").replace(/>/g, "&gt;") || 'Idle';
+
+                // *** MODIFIED HTML STRUCTURE ***
                 return `
                 <div class="thought-entry">
-                    <div class="thought-agent-name">${agent.name}</div>
-                    <div class="thought-text">${agent.lastThought || 'Idle'}</div>
-                    <div class="thought-energy">⚡ Energy: ${energyText}</div>
-                    ${agent.inventory && agent.inventory.length > 0 ? `
-                        <div class="inventory-list">
-                            ${agent.inventory.map(item => `
-                                <div class="inventory-item">
-                                    <span class="inventory-item-name">${item.name}</span>
-                                    <span class="inventory-item-quantity">x${item.quantity}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
+                    <div class="agent-header-info"> 
+                        <span class="agent-name">${agent.name}</span>
+                        <img src="assets/ui/icons/energy_icon.png" class="energy-icon icon" alt="E:"> 
+                        <span class="agent-energy">(<span class="agent-energy-value">${energyText}</span>)</span>
+                        <img src="assets/ui/icons/fish_icon.png" class="fish-icon icon" alt="Fish:"> 
+                        <span class="agent-inventory">(<span class="agent-fish-count">${fishCount}</span>)</span>
+                    </div>
+                    <div class="thought-text">
+                        <div class="thought-text-content" id="${thoughtId}">${safeThought}</div>
+                        <button class="toggle-thoughts" data-target-id="${thoughtId}" style="display: none;">Show More</button>
+                    </div>
+                    
+                    <!-- REMOVED Old Energy/Inventory display -->
+
                 </div>
             `}).join('');
+
+            // After rendering, check overflow and set button visibility
+            container.querySelectorAll('.thought-entry').forEach(entry => {
+                const textContent = entry.querySelector('.thought-text-content');
+                const toggleButton = entry.querySelector('.toggle-thoughts');
+
+                if (textContent && toggleButton) {
+                     // Reset state before check
+                    textContent.classList.remove('expanded');
+                    toggleButton.innerText = 'Show More';
+
+                    // Check for overflow
+                    const isOverflowing = textContent.scrollHeight > textContent.clientHeight;
+                    toggleButton.style.display = isOverflowing ? 'inline-block' : 'none';
+                }
+            });
+
         } else {
             console.error("Could not find thoughts-container element");
         }
@@ -290,5 +399,31 @@ hytopia.onData((data) => {
     }
 
 });
+
+// --- Add Event Listener for Toggle Buttons ---
+document.addEventListener('click', function(event) {
+    // Check if the clicked element is a toggle button
+    if (event.target.classList.contains('toggle-thoughts')) {
+        event.preventDefault(); // Prevent potential default button actions
+        
+        const button = event.target;
+        const targetId = button.getAttribute('data-target-id');
+        const textContent = document.getElementById(targetId);
+
+        if (textContent) {
+            // Toggle the expanded class
+            textContent.classList.toggle('expanded');
+
+            // Update button text
+            if (textContent.classList.contains('expanded')) {
+                button.innerText = 'Show Less';
+            } else {
+                button.innerText = 'Show More';
+            }
+        }
+    }
+});
+// --- End Event Listener ---
+
 </script>
 
