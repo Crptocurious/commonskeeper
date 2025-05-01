@@ -44,6 +44,8 @@ import { PathfindingBehavior } from "./src/behaviors/PathfindingBehavior";
 import { SpeakBehavior } from "./src/behaviors/SpeakBehavior";
 import { TradeBehavior } from "./src/behaviors/TradeBehavior";
 import { FishingBehavior } from "./src/behaviors/FishingBehavior";
+// import { AgentUpdateContext } from "./src/BaseAgent"; // Import the context interface
+import type { AgentUpdateContext } from "./src/BaseAgent"; // Corrected: Use type-only import
 
 import { Lake } from "./src/Lake";
 import { logEvent } from "./src/logger";
@@ -51,13 +53,17 @@ import { logEvent } from "./src/logger";
 // --- Global Variables ---
 const agents: BaseAgent[] = []; // Global array to track spawned agents
 const CHAT_RANGE = 10;
-const lake = new Lake(10, 5, 1); // Lake instance (Capacity 10, Initial 5)
-const LAKE_CAPACITY = 10; // Match Lake instance
-const LAKE_COLLAPSE_THRESHOLD = LAKE_CAPACITY * 0.10; // 1 fish
+const LAKE_CAPACITY = 100; // INCREASED: Match Lake instance capacity
+const LAKE_COLLAPSE_THRESHOLD = LAKE_CAPACITY * 0.10; // UPDATED: 10% of new capacity (10 fish)
+const lake = new Lake(LAKE_CAPACITY, LAKE_CAPACITY, 1); // UPDATED: Lake instance (Capacity 100, Initial 100)
 
 const LOCATIONS = {
 	pier: new Vector3(31.5, 3, 59.5)
 };
+
+// --- Added Turn-Based Fishing Tracking ---
+let currentFishingTurnIndex = 0;
+// --- End Added Turn-Based Fishing Tracking ---
 
 // --- Time and Phase Configuration (Moved Before Prompts) ---
 const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
@@ -117,15 +123,18 @@ You are a fisherman fishing in a shared lake with 2 others (3 total). Your survi
 *   Townhall Reports: state.lastHarvestReports (dictionary of {agentName: fishCaught})
 
 **Schedule (1-hour cycle):**
-*   HARVEST phase: First ${HARVEST_WINDOW_DURATION_MINUTES} minutes (${harvestWindowTicks} ticks). ONLY time to fish.
+*   HARVEST phase: First ${HARVEST_WINDOW_DURATION_MINUTES} minutes (${harvestWindowTicks} ticks). ONLY time to fish. Fish one agent per tick (turn-based).
 *   TOWNHALL phase: Next ${TOWNHALL_DURATION_MINUTES} minutes (${townhallDurationTicks} ticks). Discuss previous harvest.
 
 **Your Goal:** Survive long-term. Decide how much fish (suggested range: 0-5 tons, consider capacity ${LAKE_CAPACITY}) to attempt harvesting in the upcoming HARVEST window. Catching too much risks PERMANENT COLLAPSE.
 
 **Decision/Action Required:**
 1.  Harvest Plan (During TOWNHALL/Before HARVEST): Output: <plan harvest=N />. Reason in <monologue>. Base decision on lake stock, energy (1 fish = ~10 energy), others' reports, and **avoiding permanent collapse**.
-2.  Townhall Report (During TOWNHALL): Output: <report harvest=X /> (X = actual fish caught last harvest).
-3.  Movement/Other (Optional): Output: <action type="pathfindTo">...</action> to move to pier (coords: ${LOCATIONS.pier.x},${LOCATIONS.pier.y},${LOCATIONS.pier.z}).
+2.  Harvest Action (During HARVEST, when it's your turn): Output: <action type="cast_rod"></action> to attempt fishing. You can only do this once per turn.
+3.  Townhall Report (During TOWNHALL): Output: <report harvest=X /> (X = actual fish caught last harvest).
+4.  Townhall Speak (During TOWNHALL): Output: <action type="townhall_speak">{"message": "Your public message here."}</action> to broadcast to everyone.
+5.  Nearby Speak (Any Time): Output: <action type="speak">{"message": "Your nearby message here."}</action> for local chat.
+6.  Movement/Other (Optional): Output: <action type="pathfindTo">...</action> to move to pier (coords: ${LOCATIONS.pier.x},${LOCATIONS.pier.y},${LOCATIONS.pier.z}).
 
 Remember: Collapse is PERMANENT. Be careful.
 `;
@@ -251,6 +260,39 @@ function sendPhaseUpdate(world: World, phase: GamePhase) {
 	});
 }
 
+// --- Added Public Broadcast Function ---
+function broadcastPublicMessage(senderAgent: BaseAgent, message: string, world: GameWorld, currentTick: number) {
+    const cleanMessage = message.replace(/\</g, "&lt;").replace(/>/g, "&gt;"); // Basic sanitization
+    console.log(`[PUBLIC CHAT] ${senderAgent.name}: ${cleanMessage}`);
+    logEvent({
+        type: 'PUBLIC_CHAT',
+        sender: senderAgent.name,
+        message: cleanMessage,
+        tick: currentTick
+    });
+
+    // Send to all agents (except sender)
+    agents.forEach((recipientAgent) => {
+        if (recipientAgent !== senderAgent) {
+            recipientAgent.handlePublicChat(senderAgent.name, cleanMessage);
+        }
+    });
+
+    // Optional: Send to player UIs as well?
+    const playerEntities = world.entityManager.getAllPlayerEntities();
+    playerEntities.forEach((playerEntity: any) => {
+        const player = playerEntity?.player;
+        if (player && player.ui) {
+            player.ui.sendData({
+                type: 'publicChatUpdate', // New UI event type
+                sender: senderAgent.name,
+                message: cleanMessage
+            });
+        }
+    });
+}
+// --- End Public Broadcast Function ---
+
 // --- Server Start ---
 startServer((world) => {
 	const gameWorld = world as GameWorld;
@@ -280,14 +322,16 @@ startServer((world) => {
 	setInterval(() => {
         const currentTick = gameWorld.currentTimeTicks;
         const tickInCycle = currentTick % totalCycleTicks;
+        const currentPhase = gameWorld.currentPhase; // Cache current phase for the tick
 
-        // --- Start of Cycle / Trigger Regeneration / Start HARVEST Phase ---
+        // --- Phase Transitions ---
+        // Start of Cycle / Trigger Regeneration / Start HARVEST Phase
         if (tickInCycle === 0 && currentTick > 0) { // Skip regen/phase change on tick 0
             console.log(`Tick ${currentTick}: Starting new cycle. Regenerating lake.`);
             lake.regenerate();
             sendLakeStatusUpdate(gameWorld, lake);
 
-            if (gameWorld.currentPhase !== 'HARVEST') {
+            if (currentPhase !== 'HARVEST') {
                 gameWorld.currentPhase = 'HARVEST';
                 logEvent({ type: 'PHASE_START', phase: 'HARVEST', tick: currentTick, durationTicks: harvestWindowTicks });
                 sendPhaseUpdate(gameWorld, gameWorld.currentPhase);
@@ -303,7 +347,7 @@ startServer((world) => {
             lake.checkCollapse();
             sendLakeStatusUpdate(gameWorld, lake);
 
-            if (gameWorld.currentPhase !== 'TOWNHALL') {
+            if (currentPhase !== 'TOWNHALL') {
                 gameWorld.currentPhase = 'TOWNHALL';
                 logEvent({ type: 'PHASE_START', phase: 'TOWNHALL', tick: currentTick, durationTicks: townhallDurationTicks });
                 sendPhaseUpdate(gameWorld, gameWorld.currentPhase);
@@ -314,7 +358,54 @@ startServer((world) => {
         }
 
         // --- Agent Processing ---
-        // BaseAgent.onTick handles internal updates, perception, and triggers Plan.chat if needed
+        // Prepare context for agent updates
+        const agentUpdateContext: AgentUpdateContext = {
+            currentTick: currentTick,
+            currentPhase: gameWorld.currentPhase, // Use the potentially updated phase for this tick
+            lake: lake,
+            lastHarvestReports: gameWorld.lastHarvestReports,
+            broadcastPublicMessage: (sender, message) => broadcastPublicMessage(sender, message, gameWorld, currentTick) // Pass bound function
+        };
+
+        // --- Turn-Based Fishing Logic (Only during HARVEST) ---
+        if (gameWorld.currentPhase === 'HARVEST') {
+            if (agents.length > 0) {
+                 // Ensure index is valid
+                currentFishingTurnIndex = currentFishingTurnIndex % agents.length;
+                const agentWhoseTurnItIs = agents[currentFishingTurnIndex];
+
+                // Set flags for all agents
+                agents.forEach((agent, index) => {
+                    agent.canAttemptFishThisTick = (index === currentFishingTurnIndex);
+                    if (index === currentFishingTurnIndex) {
+                        console.log(`Tick ${currentTick}: ${agent.name}'s turn to fish.`);
+                    }
+                });
+                
+                // Update index for the *next* tick
+                currentFishingTurnIndex = (currentFishingTurnIndex + 1) % agents.length;
+            } else {
+                 // Reset index if no agents
+                currentFishingTurnIndex = 0;
+            }
+        } else {
+            // Ensure no one can fish outside HARVEST phase
+            agents.forEach(agent => {
+                agent.canAttemptFishThisTick = false;
+            });
+        }
+        // --- End Turn-Based Fishing Logic ---
+
+        // Call BaseAgent.update() for each agent with the context
+        agents.forEach(agent => {
+             if (!agent.isDead) { // Optional: Check if agent is alive
+                try {
+                    agent.update(agentUpdateContext);
+                } catch (error) {
+                    console.error(`Error updating agent ${agent.name}:`, error);
+                }
+            }
+        });
 
 		// Optional: Periodic Log
 		if (currentTick > 0 && currentTick % (TICKS_PER_HOUR / 4) === 0) {
@@ -342,7 +433,7 @@ startServer((world) => {
 			capacity: lakeState.capacity,
 			initial_stock_value: lakeState.stock,
             is_initially_collapsed: isInitiallyCollapsed,
-            collapse_threshold: 0.10
+            collapse_threshold: LAKE_COLLAPSE_THRESHOLD
 		},
         phase_config: {
             harvest_window_ticks: harvestWindowTicks,
@@ -385,7 +476,7 @@ startServer((world) => {
         sendPhaseUpdate(world, gameWorld.currentPhase);
 
 		// Send initial agent thoughts/states
-        player.ui.sendData({
+		player.ui.sendData({
 			type: "agentThoughts",
 			agents: agents.map((agent) => { // Uses global agents array
 				const agentState = agent.getCurrentState();
@@ -425,27 +516,27 @@ startServer((world) => {
 		if (!player) { // Agent message
              const agentNameMatch = message.match(/^\[([^\]]+)\]/);
              const agentName = agentNameMatch ? agentNameMatch[1] : null;
-             if (agentName) {
+			if (agentName) {
                  const sourceAgent = agents.find((a) => a.name === agentName);
-                 if (sourceAgent) {
-                     agents.forEach((targetAgent) => {
-                         if (targetAgent !== sourceAgent) {
+				if (sourceAgent) {
+					agents.forEach((targetAgent) => {
+						if (targetAgent !== sourceAgent) {
                              try {
                                  const distance = Vector3.fromVector3Like(sourceAgent.position).distance(Vector3.fromVector3Like(targetAgent.position));
                                  if (distance <= CHAT_RANGE) {
                                      targetAgent.handleExternalChat({ 
-                                         type: "Agent", 
+									type: "Agent",
                                          message: message.substring(agentNameMatch![0].length).trim(), 
                                          agent: sourceAgent 
-                                     });
-                                 }
+								});
+							}
                              } catch (e) { console.error(`Chat routing error for ${targetAgent.name}:`, e); }
-                         }
-                     });
+						}
+					});
                  } else { console.warn(`Chat: Source agent ${agentName} not found.`); }
              } else { console.warn(`Chat: Agent message lacks name prefix: ${message}`); }
-             return;
-        }
+			return;
+		}
 
         // Player message
         const playerEntity = world.entityManager.getPlayerEntitiesByPlayer(player)?.[0];
@@ -453,17 +544,17 @@ startServer((world) => {
             console.warn(`Chat: Player ${player.username} entity not found.`);
             return;
         }
-        agents.forEach((agent) => {
+		agents.forEach((agent) => {
             try {
                 const distance = Vector3.fromVector3Like(playerEntity.position).distance(Vector3.fromVector3Like(agent.position));
                 if (distance <= CHAT_RANGE) {
                      agent.handleExternalChat({ 
-                         type: "Player", 
-                         message, 
+					type: "Player",
+					message,
                          player 
-                     });
-                 }
+				});
+			}
             } catch(e) { console.error(`Chat routing error for ${agent.name} from ${player.username}:`, e); }
-        });
+		});
 	});
 });

@@ -64,29 +64,17 @@ export class FishingBehavior implements AgentBehavior {
 		if (toolName === "cast_rod") {
 			console.log("Fishing tool called");
 
-			// --- Time Check ---
-			const gameWorld = agent.world as any; // Cast to get time properties
-			const currentTime = gameWorld.currentTimeTicks;
-			const isHarvestTime = isWithinWindow(currentTime, HARVEST_INTERVAL_TICKS, HARVEST_DURATION_TICKS);
-
-			logEvent({
-				type: "agent_harvest_time_check",
-				agentId: agent.id,
-				agentName: agent.name,
-				currentTimeTicks: currentTime,
-				interval: HARVEST_INTERVAL_TICKS,
-				duration: HARVEST_DURATION_TICKS,
-				isHarvestTime: isHarvestTime
-			});
-
-			if (!isHarvestTime) {
-				const nextWindowStart = Math.ceil(currentTime / HARVEST_INTERVAL_TICKS) * HARVEST_INTERVAL_TICKS;
-				const ticksUntilStart = nextWindowStart - currentTime;
-				const secondsUntilStart = (ticksUntilStart / (gameWorld.ticksPerHour / 3600)).toFixed(1);
-				console.log(`${agent.name} tried to fish outside the window. Current: ${currentTime}, Harvest: ${isHarvestTime}. Next window in ${secondsUntilStart}s`);
-				return `It's not the right time to fish. The next fishing window opens in about ${secondsUntilStart} seconds.`;
+			// --- Phase and Turn Check ---
+			if (agent.currentPhase !== 'HARVEST') {
+				console.log(`${agent.name} tried to fish during ${agent.currentPhase} phase.`);
+				return `You can only fish during the HARVEST phase. It is currently ${agent.currentPhase}.`;
 			}
-			// --- End Time Check ---
+
+			if (!agent.canAttemptFishThisTick) {
+				console.log(`${agent.name} tried to fish, but it's not their turn.`);
+				return `It's not your turn to fish right now. Wait for the others.`;
+			}
+			// --- End Phase and Turn Check ---
 
 			// Log the attempt
 			logEvent({
@@ -108,6 +96,10 @@ export class FishingBehavior implements AgentBehavior {
 
 			this.isFishing = true;
 
+			// Reset the fishing turn flag immediately after starting the attempt
+			// This prevents multiple casts if the agent calls the tool again before the timeout finishes
+			agent.canAttemptFishThisTick = false;
+
 			// Start fishing animation if available
 			agent.stopModelAnimations(["walk_upper", "walk_lower", "run_upper", "run_lower"]);
 			agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]); // Could be replaced with a fishing animation
@@ -120,11 +112,20 @@ export class FishingBehavior implements AgentBehavior {
 				if (!result.success) {
 					this.failedAttempts++;
 					if (this.failedAttempts >= 3) {
-						// Handle death sequence
+						// Agent no longer despawns here due to failed fishing.
+						// EnergyManager should handle consequences of low energy.
+						// agent.handleEnvironmentTrigger(
+						// 	"You've failed to catch fish too many times and have starved to death..."
+						// );
+						// agent.despawn(); // Removed this line
+						// return; // Keep the return to avoid the "Nothing biting" message if >= 3 failures occurred.
+
+						// Maybe log a warning instead?
+						console.warn(`${agent.name} has failed to fish 3 times in a row. Potential starvation risk if energy is low.`);
+						// Let the agent report the failure back to the LLM
 						agent.handleEnvironmentTrigger(
-							"You've failed to catch fish too many times and have starved to death..."
+							"You've failed to catch fish 3 times in a row. You might be starving if your energy is low and the lake is empty."
 						);
-						agent.despawn();
 						return;
 					}
 					agent.handleEnvironmentTrigger(
@@ -183,12 +184,12 @@ export class FishingBehavior implements AgentBehavior {
 
 	getPromptInstructions(): string {
 		return `
-To fish at the pier, use:
+To fish at the pier (ONLY during HARVEST phase and when it's your turn): 
 <action type="cast_rod"></action>
 
 You must call cast_rod exactly like this, with the empty object inside the action tag.
 
-To give a fish to another agent, use:
+To give a fish to another agent:
 <action type="give_fish">
 {
     target: "name of the player or agent to give the fish to"
@@ -197,7 +198,8 @@ To give a fish to another agent, use:
 
 You must be within 5 meters of the pier to fish.
 Each attempt takes 5 seconds and has a chance to catch nothing or a fish.
-You can only have one line in the water at a time.`;
+You can only have one line in the water at a time.
+Fishing is only allowed during the HARVEST phase and only one agent can fish per tick.`;
 	}
 
 	getState(): string {

@@ -20,6 +20,17 @@ import { Perceive } from "./brain/cognitive/Perceive";
 import { ScratchMemory } from "./brain/memory/ScratchMemory";
 import type { Lake } from "./Lake";
 
+// --- Added GameContext Interface ---
+// Define a context interface to pass necessary game state to agent updates
+export interface AgentUpdateContext {
+	currentTick: number;
+	currentPhase: 'HARVEST' | 'TOWNHALL';
+	lake: Lake; // Pass lake instance for behaviors that need it directly
+	lastHarvestReports?: { [agentName: string]: number }; // Pass reports
+	broadcastPublicMessage: (sender: BaseAgent, message: string) => void; // Function for townhall chat
+}
+// --- End Added GameContext Interface ---
+
 /**
  * This is the interface that all behaviors must implement.
  * See each of the behaviors for examples of how to implement this.
@@ -73,6 +84,10 @@ export class BaseAgent extends Entity {
 	private scratchMemory: ScratchMemory;
 
 	public isDead: boolean = false; // Added property to track death state
+	public currentPhase: 'HARVEST' | 'TOWNHALL' = 'TOWNHALL'; // Added: Store current phase
+	public canAttemptFishThisTick: boolean = false; // Added: Turn-based fishing flag
+	private lastHarvestReports: { [agentName: string]: number } = {}; // Added: Store last reports
+	private broadcastPublicMessage?: (sender: BaseAgent, message: string) => void; // Added: Store broadcast function
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
@@ -91,8 +106,6 @@ export class BaseAgent extends Entity {
 		this.scratchMemory = new ScratchMemory(this.name);
 		this.perceive = new Perceive(this.name);
 		this.plan = new Plan(options.systemPrompt);
-		
-		this.on(EntityEvent.TICK, this.onTickBehavior);
 		
 		// Start inactivity checker when agent is created
 		this.inactivityCheckInterval = setInterval(() => {
@@ -116,8 +129,14 @@ export class BaseAgent extends Entity {
 		});
 	}
 
-	private onTickBehavior = () => {
+	// Renamed and updated signature to accept context
+	public update(context: AgentUpdateContext): void {
 		if (!this.isSpawned || !this.world) return;
+
+		// Store context info
+		this.currentPhase = context.currentPhase;
+		this.lastHarvestReports = context.lastHarvestReports || {}; // Store reports
+		this.broadcastPublicMessage = context.broadcastPublicMessage; // Store broadcast function
 
 		const previousEnergyState = this.energyManager.getState();
 		this.energyManager.decayTick();
@@ -144,9 +163,8 @@ export class BaseAgent extends Entity {
 		this.perceive.perceiveAgentEnergies(agentObservations);
 
 		// Perceive lake if it exists in the world
-		const lake = this.world.entityManager.getAllEntities().find(e => e.name === "Lake") as Lake | undefined;
-		if (lake?.getState) {
-			this.perceive.perceiveLake(lake);
+		if (context.lake) {
+			this.perceive.perceiveLake(context.lake);
 		}
 
 		// Log energy decay event here, with agent context
@@ -163,14 +181,28 @@ export class BaseAgent extends Entity {
 		// Existing behavior updates
 		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
 
+		// --- Add LLM Tick Trigger Logic ---
+		// Decide if the agent should think/plan based on phase, energy, etc.
+		// For now, let's trigger a thought process periodically or on phase change (simplified)
+		const lastPhaseMemory = this.scratchMemory.getRecentMemories({ types: ['phase_change'], maxCount: 1 })[0];
+		const lastKnownPhase = lastPhaseMemory ? lastPhaseMemory.content : null;
+		const shouldTriggerLLM = (context.currentTick % (60 * 5) === 0) || (this.currentPhase !== lastKnownPhase);
+
+		if (shouldTriggerLLM) {
+			// Store the new phase in memory
+			this.scratchMemory.addMemory({ type: 'phase_change', content: this.currentPhase, timestamp: Date.now() });
+			console.log(`Agent ${this.name}: Triggering LLM reasoning. Tick: ${context.currentTick}, Phase: ${this.currentPhase}`);
+			this.plan.chat(this, { type: "Environment", message: "Current Tick: " + context.currentTick + ". Phase: " + this.currentPhase + ". Check your state and decide on actions." });
+			this.lastActionTime = Date.now(); // Reset inactivity timer when LLM is triggered
+		}
+		// --- End LLM Tick Trigger Logic ---
 
 		// Check depletion status from manager
 		if (currentEnergyState.isDepleted) {
 			// Placeholder for potential death/starvation logic
 			// console.log(`${this.name} has run out of energy!`);
 		}
-
-	};
+	}
 
 	public addBehavior(behavior: AgentBehavior) {
 		this.behaviors.push(behavior);
@@ -225,42 +257,76 @@ export class BaseAgent extends Entity {
 		state.maxEnergy = energyState.maxEnergy;
 		state.inventory = Array.from(this.inventory.values()); // Keep inventory logic here
 
-        // Add time information from the world state
-        if (this.world) {
-            const gameWorld = this.world as any; // Cast to access custom properties
-            if (gameWorld.currentTimeTicks !== undefined) {
-                state.currentTimeTicks = gameWorld.currentTimeTicks;
-                state.ticksPerHour = gameWorld.ticksPerHour;
-                state.ticksPerDay = gameWorld.ticksPerDay;
-                // Optionally calculate and add current hour/day
-                // state.currentHour = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerHour) % 24;
-                // state.currentDay = Math.floor(gameWorld.currentTimeTicks / gameWorld.ticksPerDay);
-            }
-        }
+		// Add time and phase information directly from the agent's stored state
+		if (this.world) {
+			const gameWorld = this.world as any; // Cast to access config properties
+			if (gameWorld.currentTimeTicks !== undefined) { // Use world's time for consistency in state
+				state.currentTimeTicks = gameWorld.currentTimeTicks;
+				state.ticksPerHour = gameWorld.ticksPerHour;
+				state.ticksPerDay = gameWorld.ticksPerDay;
+			}
+		}
+		state.currentPhase = this.currentPhase; // Add current phase to state
+		state.lastHarvestReports = this.lastHarvestReports; // Add last harvest reports
+		
+		// Add lake stock information directly from scratch memory
+		const lakeState = this.scratchMemory.getLakeState();
+		if (lakeState) {
+			state.lakeStock = lakeState.stock;
+		}
 
 		return state;
 	}
 
-
 	/**
-	 * Same handleToolCall as in your code. We simply pass the calls to behaviors.
+	 * Handle tool calls, passing context to behaviors.
 	 */
 	public handleToolCall(toolName: string, args: any, player?: Player) {
 		if (!this.world) return;
 		let results: string[] = [];
-		console.log("Handling tool call:", toolName, args);
-		this.behaviors.forEach((b) => {
-			if (b.onToolCall) {
-				const result = b.onToolCall(
-					this,
-					this.world!,
-					toolName,
-					args,
-					player
-				);
-				if (result) results.push(`${toolName}: ${result}`);
+		console.log(`Agent ${this.name} handling tool call:`, toolName, args);
+		this.lastActionTime = Date.now(); // Update activity time on any tool call
+
+		// --- Phase/Tool Specific Logic --- 
+		if (toolName === 'townhall_speak' && this.currentPhase === 'TOWNHALL') {
+			if (this.broadcastPublicMessage && args.message) {
+				console.log(`Agent ${this.name} broadcasting public message: ${args.message}`);
+				this.broadcastPublicMessage(this, args.message);
+				results.push(`${toolName}: Message broadcasted publicly.`);
+			} else {
+				results.push(`${toolName}: Could not broadcast message (function missing or message empty).`);
 			}
-		});
+		} else if (toolName === 'speak') {
+			// Normal speak is handled by SpeakBehavior, potentially for nearby chat
+			// Let SpeakBehavior handle it, it might implement range checks later
+			let handledByBehavior = false;
+			this.behaviors.forEach((b) => {
+				if (b.constructor.name === 'SpeakBehavior' && b.onToolCall) {
+					const result = b.onToolCall(this, this.world!, toolName, args, player);
+					if (result) results.push(`${toolName}: ${result}`);
+					handledByBehavior = true;
+				}
+			});
+			if (!handledByBehavior) {
+				results.push(`${toolName}: SpeakBehavior not found or did not handle the call.`);
+			}
+		} else {
+			// Default: Pass to all behaviors (includes FishingBehavior, etc.)
+			this.behaviors.forEach((b) => {
+				if (b.onToolCall) {
+					const result = b.onToolCall(
+						this,
+						this.world!,
+						toolName,
+						args,
+						player
+					);
+					if (result) results.push(`${b.constructor.name}.${toolName}: ${result}`); // Add behavior name for clarity
+				}
+			});
+		}
+		// --- End Phase/Tool Specific Logic ---
+
 		return results.join("\n");
 	}
 
@@ -275,10 +341,10 @@ export class BaseAgent extends Entity {
 			message
 		);
 		// We can keep using the ChatOptions interface here too
-        const options: ChatOptions = {
-            type: "Environment",
-            message,
-        };
+		const options: ChatOptions = {
+			type: "Environment",
+			message,
+		};
 		this.plan.chat(this, options);
 	}
 
@@ -289,17 +355,47 @@ export class BaseAgent extends Entity {
 	public handleExternalChat(options: ChatOptions): void {
 		// Basic check to ensure it's not an Environment message passed incorrectly
 		if (options.type === "Environment") {
-			 console.warn(`Agent ${this.name} received an Environment message via handleExternalChat. Use handleEnvironmentTrigger instead.`);
-			 // Optionally, still process it or just return
-			 // this.plan.chat(this, options);
-			 return;
+			console.warn(`Agent ${this.name} received an Environment message via handleExternalChat. Use handleEnvironmentTrigger instead.`);
+			// Optionally, still process it or just return
+			// this.plan.chat(this, options);
+			return;
 		}
 		
 		// Log the reception for debugging
 		console.log(`Agent ${this.name} received external chat: Type=${options.type}, From=${options.player?.username || options.agent?.name || 'Unknown'}`);
 		
+		// Store in scratch memory
+		this.scratchMemory.addMemory({ 
+			type: "message", 
+			content: { 
+				source: options.player?.username || options.agent?.name || 'Unknown', 
+				message: options.message 
+			}, 
+			timestamp: Date.now() 
+		});
+
 		// Forward to the Plan module
 		this.plan.chat(this, options);
+	}
+
+	/**
+	 * New method to handle public chat messages specifically during Townhall.
+	 * Stores the message in memory.
+	 */
+	public handlePublicChat(senderName: string, message: string): void {
+		console.log(`Agent ${this.name} received public chat from ${senderName}: ${message}`);
+		// Store in scratch memory, maybe with a specific tag
+		this.scratchMemory.addMemory({ 
+			type: "public_message", 
+			content: { 
+				source: senderName, 
+				message: message 
+			}, 
+			timestamp: Date.now() 
+		});
+
+		// Optional: Trigger a reaction or update internal state based on the message
+		// this.plan.chat(this, { type: "Agent", message: `Received public message from ${senderName}: ${message}`, agent: undefined }); // Example: Make agent react
 	}
 
 	// Clean up interval when agent is destroyed
