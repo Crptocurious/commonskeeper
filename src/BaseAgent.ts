@@ -250,39 +250,67 @@ export class BaseAgent extends Entity {
 			.sort((a, b) => a.distance - b.distance);
 	}
 
-	public getCurrentState(): Record<string, any> {
+	/**
+	 * Get agent-specific state (energy, inventory, behaviors)
+	 */
+	public getAgentState(): Record<string, any> {
 		const state: Record<string, any> = {};
+		
+		// Get behavior states
 		this.behaviors.forEach((behavior) => {
 			if (behavior.getState) {
 				state[behavior.constructor.name] = behavior.getState();
 			}
 		});
 
-		// Get energy state from manager
+		// Get energy state
 		const energyState = this.energyManager.getState();
 		state.energy = energyState.currentEnergy;
 		state.maxEnergy = energyState.maxEnergy;
-		state.inventory = Array.from(this.inventory.values()); // Keep inventory logic here
+		
+		// Get inventory
+		state.inventory = Array.from(this.inventory.values());
 
-		// Add time and phase information directly from the agent's stored state
+		return state;
+	}
+
+	/**
+	 * Get global game state (time, phase, lake, etc)
+	 */
+	public getGameState(): Record<string, any> {
+		const state: Record<string, any> = {};
+		
+		// Add time information
 		if (this.world) {
-			const gameWorld = this.world as any; // Cast to access config properties
-			if (gameWorld.currentTimeTicks !== undefined) { // Use world's time for consistency in state
+			const gameWorld = this.world as any;
+			if (gameWorld.currentTimeTicks !== undefined) {
 				state.currentTimeTicks = gameWorld.currentTimeTicks;
 				state.ticksPerHour = gameWorld.ticksPerHour;
 				state.ticksPerDay = gameWorld.ticksPerDay;
 			}
 		}
-		state.currentPhase = this.currentPhase; // Add current phase to state
-		state.lastHarvestReports = this.lastHarvestReports; // Add last harvest reports
-		
-		// Add lake stock information directly from scratch memory
+
+		// Add phase information
+		state.currentPhase = this.currentPhase;
+		state.lastHarvestReports = this.lastHarvestReports;
+
+		// Add lake state
 		const lakeState = this.scratchMemory.getLakeState();
 		if (lakeState) {
-			state.lakeStock = lakeState.stock;
+			state.lake = lakeState;
 		}
 
 		return state;
+	}
+
+	/**
+	 * Get combined state (for backward compatibility and full state access)
+	 */
+	public getCurrentState(): Record<string, any> {
+		return {
+			...this.getAgentState(),
+			...this.getGameState(),
+		};
 	}
 
 	/**
