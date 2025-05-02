@@ -10,6 +10,7 @@ export class Lake extends EventEmitter {
   readonly regenRate: number; // Fish regenerated per tick/call to regenerate()
   private _isCollapsed: boolean = false; // Persistent collapse state
   private readonly COLLAPSE_THRESHOLD_PERCENT = 0.10; // 10% threshold
+  private lastUpdateTick: number;
 
   /**
    * Initializes the Lake resource.
@@ -22,6 +23,7 @@ export class Lake extends EventEmitter {
     this.capacity = capacity;
     this.currentStock = Math.min(initialStock, capacity); // Ensure initial stock doesn't exceed capacity
     this.regenRate = regenRate;
+    this.lastUpdateTick = 0;
 
     // Initialize collapse state based on initial stock
     if (this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
@@ -179,5 +181,17 @@ export class Lake extends EventEmitter {
    */
   isCollapsed(): boolean {
       return this._isCollapsed;
+  }
+
+  public getCurrentStock(): number {
+    return this.currentStock;
+  }
+
+  public getMaxCapacity(): number {
+    return this.capacity;
+  }
+
+  public getLastUpdateTick(): number {
+    return this.lastUpdateTick;
   }
 } 

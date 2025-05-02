@@ -75,21 +75,20 @@ export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
 	private internalMonologue: string[] = [];
 	private lastActionTick: number = 0;
-	private lastReflectionTick: number = 0; // Added: Track last reflection time
+	private lastReflectionTick: number = 0;
 	private currentTick: number = 0;
 	private chatUI: SceneUI;
 	private inventory: Map<string, InventoryItem> = new Map();
 	public energyManager: EnergyManager;
-	private plan: Plan;
 	private perceive: Perceive;
 	private scratchMemory: ScratchMemory;
 	private cognitiveCycle: CognitiveCycle;
 
-	public isDead: boolean = false; // Added property to track death state
-	public currentPhase: 'HARVEST' | 'TOWNHALL' = 'TOWNHALL'; // Added: Store current phase
-	public canAttemptFishThisTick: boolean = false; // Added: Turn-based fishing flag
-	private lastHarvestReports: { [agentName: string]: number } = {}; // Added: Store last reports
-	private broadcastPublicMessage?: (sender: BaseAgent, message: string) => void; // Added: Store broadcast function
+	public isDead: boolean = false;
+	public currentPhase: 'HARVEST' | 'TOWNHALL' = 'TOWNHALL';
+	public canAttemptFishThisTick: boolean = false;
+	private lastHarvestReports: { [agentName: string]: number } = {};
+	private broadcastPublicMessage?: (sender: BaseAgent, message: string) => void;
 
 	constructor(options: { name?: string; systemPrompt: string }) {
 		super({
@@ -106,9 +105,8 @@ export class BaseAgent extends Entity {
 
 		this.energyManager = new EnergyManager();
 		this.scratchMemory = new ScratchMemory(this.name);
-		this.perceive = new Perceive(this.name);
-		this.plan = new Plan(options.systemPrompt);
-		this.cognitiveCycle = new CognitiveCycle();
+		this.perceive = new Perceive(this.name, this.scratchMemory);
+		this.cognitiveCycle = new CognitiveCycle(options.systemPrompt);
 		
 		this.chatUI = new SceneUI({
 			templateId: "agent-chat",
@@ -127,9 +125,19 @@ export class BaseAgent extends Entity {
 
 		// Store context info
 		this.currentPhase = context.currentPhase;
-		this.lastHarvestReports = context.lastHarvestReports || {}; // Store reports
-		this.broadcastPublicMessage = context.broadcastPublicMessage; // Store broadcast function
-		this.currentTick = context.currentTick; // Store current tick
+		this.lastHarvestReports = context.lastHarvestReports || {};
+		this.broadcastPublicMessage = context.broadcastPublicMessage;
+		this.currentTick = context.currentTick;
+
+		// Check if we should update game state (every 100 ticks)
+		if (this.perceive.shouldUpdate(this.currentTick)) {
+			this.perceive.forceGameStateUpdate(
+				context.lake,
+				context.currentPhase,
+				Math.floor(this.currentTick / (60 * 30)), // Assuming 30 minutes per cycle
+				this.currentTick
+			);
+		}
 
 		const previousEnergyState = this.energyManager.getState();
 		this.energyManager.decayTick();
@@ -137,28 +145,6 @@ export class BaseAgent extends Entity {
 
 		// Update perception and memory
 		const nearbyEntities = this.getNearbyEntities();
-		
-		// Perceive nearby agents
-		const agentObservations = nearbyEntities
-			.filter(e => e.type === "Agent")
-			.map(e => {
-				const entity = this.world!.entityManager.getAllEntities().find(entity => entity.name === e.name);
-				if (entity instanceof BaseAgent) {
-					return {
-						agentId: e.name,
-						energyManager: entity.energyManager
-					};
-				}
-				return null;
-			})
-			.filter((obs): obs is { agentId: string; energyManager: EnergyManager } => obs !== null);
-
-		this.perceive.perceiveAgentEnergies(agentObservations);
-
-		// Perceive lake if it exists in the world
-		if (context.lake) {
-			this.perceive.perceiveLake(context.lake);
-		}
 
 		// Log energy decay event here, with agent context
 		if (currentEnergyState.currentEnergy !== previousEnergyState.currentEnergy) {
@@ -175,20 +161,19 @@ export class BaseAgent extends Entity {
 		this.behaviors.forEach((b) => b.onUpdate(this, this.world!));
 
 		// --- Add LLM Tick Trigger Logic ---
-		// Decide if the agent should think/plan based on phase, energy, etc.
 		const lastPhaseMemory = this.scratchMemory.getRecentMemories({ types: ['phase_change'], maxCount: 1 })[0];
 		const lastKnownPhase = lastPhaseMemory ? lastPhaseMemory.content : null;
+		const phaseChanged = lastKnownPhase !== null && this.currentPhase !== lastKnownPhase;
 		const ticksSinceLastAction = context.currentTick - this.lastActionTick;
-		const isInactive = ticksSinceLastAction >= (60 * 5);
-		const phaseChanged = this.currentPhase !== lastKnownPhase;
+		const isInactive = ticksSinceLastAction >= (60 * 30);
 		
 		if (isInactive || phaseChanged) {
-			// Store the new phase in memory if it changed
 			if (phaseChanged) {
+				this.scratchMemory.addMemory({ type: 'phase_change', content: this.currentPhase, timestamp: Date.now() });
+			} else if (lastKnownPhase === null) {
 				this.scratchMemory.addMemory({ type: 'phase_change', content: this.currentPhase, timestamp: Date.now() });
 			}
 
-			// Construct message based on triggers
 			let message = "";
 			if (isInactive) {
 				message += `You have been inactive for ${ticksSinceLastAction} ticks. `;
@@ -200,7 +185,7 @@ export class BaseAgent extends Entity {
 
 			console.log(`Agent ${this.name}: Triggering LLM reasoning. Tick: ${context.currentTick}, Phase: ${this.currentPhase}`);
 			this.handleEnvironmentTrigger(message);
-			this.lastActionTick = context.currentTick; // Reset last action tick
+			this.lastActionTick = context.currentTick;
 		}
 		// --- End LLM Tick Trigger Logic ---
 
@@ -375,8 +360,7 @@ export class BaseAgent extends Entity {
 			"Environment trigger for agent " + this.name + ":",
 			message
 		);
-		// Use the cognitive cycle instead of directly calling plan
-		this.cognitiveCycle.executeCycle(this, this.plan, message);
+		this.cognitiveCycle.executeCycle(this, message);
 	}
 
 	/**
@@ -386,9 +370,7 @@ export class BaseAgent extends Entity {
 	public handleExternalChat(options: ChatOptions): void {
 		// Basic check to ensure it's not an Environment message passed incorrectly
 		if (options.type === "Environment") {
-			console.warn(`Agent ${this.name} received an Environment message via handleExternalChat. Use handleEnvironmentTrigger instead.`);
-			// Optionally, still process it or just return
-			// this.plan.chat(this, options);
+			console.warn(`${this.name} received an Environment message via handleExternalChat. Use handleEnvironmentTrigger instead.`);
 			return;
 		}
 		
@@ -405,8 +387,8 @@ export class BaseAgent extends Entity {
 			timestamp: Date.now() 
 		});
 
-		// Forward to the Plan module
-		this.plan.chat(this, options);
+		// Use cognitive cycle's chat handler
+		this.cognitiveCycle.handleChat(this, options);
 	}
 
 	/**

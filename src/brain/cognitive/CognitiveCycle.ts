@@ -1,14 +1,16 @@
 import type { BaseAgent } from '../../BaseAgent';
 import { Reflect } from './Reflect';
-import type { Plan } from './Plan';
+import { Plan } from './Plan';
 import type { ChatOptions } from './Plan';
 
 export class CognitiveCycle {
     private reflect: Reflect;
+    private plan: Plan;
     private readonly REFLECTION_INTERVAL_TICKS: number = 10 * 60 * 60; // 10 minutes at 60 TPS
 
-    constructor() {
+    constructor(systemPrompt: string) {
         this.reflect = new Reflect();
+        this.plan = new Plan(systemPrompt);
     }
 
     /**
@@ -17,6 +19,11 @@ export class CognitiveCycle {
      * 2. Phase changes
      */
     private shouldReflect(agent: BaseAgent, currentTick: number): boolean {
+        // Skip reflection during HARVEST phase
+        if (agent.currentPhase === 'HARVEST') {
+            return false;
+        }
+
         const timeSinceLastReflection = currentTick - agent.getLastReflectionTick();
         const lastPhaseMemory = agent.getScratchMemory().getRecentMemories({ types: ['phase_change'], maxCount: 1 })[0];
         const lastKnownPhase = lastPhaseMemory ? lastPhaseMemory.content : null;
@@ -31,14 +38,14 @@ export class CognitiveCycle {
      * 2. If needed, reflect on current state and recent history
      * 3. Use reflection insights (or original trigger) to inform planning
      */
-    public async executeCycle(agent: BaseAgent, plan: Plan, trigger: string): Promise<void> {
+    public async executeCycle(agent: BaseAgent, trigger: string): Promise<void> {
         try {
             const currentTick = agent.getCurrentTick();
             const needsReflection = this.shouldReflect(agent, currentTick);
 
             if (!needsReflection) {
                 // Skip reflection, proceed directly to planning
-                plan.chat(agent, {
+                this.plan.chat(agent, {
                     type: "Environment",
                     message: trigger
                 });
@@ -54,7 +61,7 @@ export class CognitiveCycle {
             if (!reflection) {
                 console.warn(`${agent.name}: Reflection failed to generate insights`);
                 // Fall back to direct planning without reflection
-                plan.chat(agent, {
+                this.plan.chat(agent, {
                     type: "Environment",
                     message: trigger
                 });
@@ -72,7 +79,7 @@ ${trigger}
 Consider the above reflection when deciding your next actions.`;
 
             // Forward to planning with enhanced context
-            plan.chat(agent, {
+            this.plan.chat(agent, {
                 type: "Environment",
                 message: enhancedTrigger
             });
@@ -80,10 +87,17 @@ Consider the above reflection when deciding your next actions.`;
         } catch (error) {
             console.error(`${agent.name}: Cognitive cycle error:`, error);
             // Fall back to direct planning without reflection
-            plan.chat(agent, {
+            this.plan.chat(agent, {
                 type: "Environment",
                 message: trigger
             });
         }
+    }
+
+    /**
+     * Handle external chat messages through the cognitive cycle
+     */
+    public handleChat(agent: BaseAgent, options: ChatOptions): void {
+        this.plan.chat(agent, options);
     }
 } 

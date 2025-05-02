@@ -1,205 +1,65 @@
-import type { EnergyState } from '../../EnergyManager';
+import type { GameState, GameStateHistory } from "../../types/GameState";
 
-export interface LakeObservation {
-  stock: number;
-  capacity: number;
-  isCollapsed: boolean;
-  lastObservedAt: number;
-}
-
-export interface AgentEnergyObservation {
-  agentId: string;
-  energyState: EnergyState;
-  lastObservedAt: number;
-}
-
-export interface Memory {
-  type: string;
-  content: any;
-  timestamp: number;
-}
-
-export interface ChatMemory extends Memory {
-  type: 'chat';
-  content: {
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-    originalSpeakerType?: 'Agent' | 'Player' | 'Environment';
-  };
+interface Memory {
+    type: string;
+    content: any;
+    timestamp: number;
 }
 
 export class ScratchMemory {
-  private lakeState: LakeObservation | null = null;
-  private agentEnergies: Map<string, AgentEnergyObservation> = new Map();
-  private selfId: string;
-  private memories: Memory[] = []; // Array to store various types of memories
-  private maxMemories: number = 100; // Maximum number of memories to store
-  private maxChatHistory: number = 50; // Maximum number of chat messages to store
+    private agentId: string;
+    private memories: Memory[] = [];
+    private gameStateHistory: GameStateHistory;
+    private readonly MAX_MEMORIES = 1000;
+    private readonly MAX_GAME_STATES = 5; // Store last 5 game states
 
-  constructor(selfId: string) {
-    this.selfId = selfId;
-  }
-
-  updateLakeObservation(observation: Omit<LakeObservation, 'lastObservedAt'>): void {
-    this.lakeState = {
-      ...observation,
-      lastObservedAt: Date.now()
-    };
-  }
-
-  updateAgentEnergy(agentId: string, energyState: EnergyState): void {
-    this.agentEnergies.set(agentId, {
-      agentId,
-      energyState,
-      lastObservedAt: Date.now()
-    });
-  }
-
-  getLakeState(): LakeObservation | null {
-    return this.lakeState;
-  }
-
-  getSelfEnergy(): AgentEnergyObservation | undefined {
-    return this.agentEnergies.get(this.selfId);
-  }
-
-  getAgentEnergy(agentId: string): AgentEnergyObservation | undefined {
-    return this.agentEnergies.get(agentId);
-  }
-
-  getAllAgentEnergies(): AgentEnergyObservation[] {
-    return Array.from(this.agentEnergies.values());
-  }
-
-  // Get all observations that are not stale (within last 5 seconds)
-  getFreshAgentEnergies(maxAgeMs: number = 5000): AgentEnergyObservation[] {
-    const now = Date.now();
-    return Array.from(this.agentEnergies.values())
-      .filter(obs => now - obs.lastObservedAt <= maxAgeMs);
-  }
-
-  // Clear stale observations older than the specified age
-  clearStaleObservations(maxAgeMs: number = 10000): void {
-    const now = Date.now();
-    for (const [agentId, obs] of this.agentEnergies.entries()) {
-      if (now - obs.lastObservedAt > maxAgeMs) {
-        this.agentEnergies.delete(agentId);
-      }
+    constructor(agentId: string) {
+        this.agentId = agentId;
+        this.gameStateHistory = {
+            states: [],
+            maxHistoryLength: this.MAX_GAME_STATES
+        };
     }
-  }
 
-  // New methods to support the Plan module
-
-  /**
-   * Add a new memory to the memory store
-   */
-  addMemory(memory: Memory): void {
-    this.memories.push(memory);
-    
-    // Trim memories if we exceed the maximum
-    if (this.memories.length > this.maxMemories) {
-      this.memories = this.memories.slice(-this.maxMemories);
+    public addMemory(memory: Memory): void {
+        this.memories.push(memory);
+        if (this.memories.length > this.MAX_MEMORIES) {
+            this.memories.shift(); // Remove oldest memory if we exceed max
+        }
     }
-  }
 
-  /**
-   * Get all memories
-   */
-  getAllMemories(): Memory[] {
-    return [...this.memories];
-  }
+    public getRecentMemories(options: { types?: string[]; maxCount?: number } = {}): Memory[] {
+        let filtered = this.memories;
+        if (options.types) {
+            filtered = filtered.filter(m => options.types!.includes(m.type));
+        }
+        const count = options.maxCount || filtered.length;
+        return filtered.slice(-count);
+    }
 
-  /**
-   * Get recent memories, optionally filtered by type and age
-   */
-  getRecentMemories(options?: { 
-    maxCount?: number, 
-    types?: string[], 
-    maxAgeMs?: number 
-  }): Memory[] {
-    const { 
-      maxCount = 20, 
-      types, 
-      maxAgeMs = 5 * 60 * 1000 // Default 5 minutes
-    } = options || {};
-    
-    const now = Date.now();
-    
-    return this.memories
-      .filter(memory => 
-        // Filter by age
-        (maxAgeMs === 0 || now - memory.timestamp <= maxAgeMs) &&
-        // Filter by type if specified
-        (!types || types.includes(memory.type))
-      )
-      .sort((a, b) => b.timestamp - a.timestamp) // Sort newest first
-      .slice(0, maxCount);
-  }
+    public updateGameState(newState: GameState): void {
+        this.gameStateHistory.states.push(newState);
+        if (this.gameStateHistory.states.length > this.gameStateHistory.maxHistoryLength) {
+            this.gameStateHistory.states.shift(); // Remove oldest state if we exceed max
+        }
+    }
 
-  /**
-   * Get memories of a specific type
-   */
-  getMemoriesByType(type: string, maxCount: number = 10): Memory[] {
-    return this.memories
-      .filter(memory => memory.type === type)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, maxCount);
-  }
+    public getLastGameState(): GameState | undefined {
+        if (this.gameStateHistory.states.length === 0) return undefined;
+        return this.gameStateHistory.states[this.gameStateHistory.states.length - 1];
+    }
 
-  /**
-   * Clear all memories
-   */
-  clearMemories(): void {
-    this.memories = [];
-  }
+    public getGameStateHistory(): GameState[] {
+        return [...this.gameStateHistory.states];
+    }
 
-  /**
-   * Get the agent's ID
-   */
-  getSelfId(): string {
-    return this.selfId;
-  }
+    public getLakeState(): any {
+        const lastState = this.getLastGameState();
+        return lastState?.lake;
+    }
 
-  /**
-   * Add a chat message to memory
-   */
-  addChatMemory(role: 'system' | 'user' | 'assistant', message: string, speakerType: 'Agent' | 'Player' | 'Environment', prefix: string = ''): void {
-    const chatMemory: ChatMemory = {
-      type: 'chat',
-      content: {
-        role: role,
-        content: `${prefix}${message}`,
-        originalSpeakerType: speakerType
-      },
-      timestamp: Date.now()
-    };
-    this.addMemory(chatMemory);
-  }
-
-  /**
-   * Get recent chat history
-   */
-  getChatHistory(options?: { 
-    maxCount?: number,
-    maxAgeMs?: number,
-    speakerTypes?: ('Agent' | 'Player' | 'Environment')[]
-  }): ChatMemory[] {
-    const { 
-      maxCount = this.maxChatHistory,
-      maxAgeMs = 5 * 60 * 1000, // Default 5 minutes
-      speakerTypes
-    } = options || {};
-
-    return this.getRecentMemories({ 
-      maxCount, 
-      types: ['chat'],
-      maxAgeMs 
-    }).filter((memory): memory is ChatMemory => {
-      if (memory.type !== 'chat') return false;
-      if (speakerTypes) {
-        return speakerTypes.includes(memory.content.originalSpeakerType);
-      }
-      return true;
-    });
-  }
-} 
+    public clearMemories(): void {
+        this.memories = [];
+        this.gameStateHistory.states = [];
+    }
+}

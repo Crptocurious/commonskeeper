@@ -1,6 +1,12 @@
 import type { BaseAgent } from '../../BaseAgent';
 import { BaseLLM } from '../BaseLLM';
-import type { Memory, LakeObservation, AgentEnergyObservation } from '../memory/ScratchMemory';
+import { StateCollector, type CompleteState } from './State';
+
+// Interface for the complete reflection state
+interface ReflectionState {
+    agentName: string;
+    sections: ReturnType<typeof StateCollector.formatAsSections>;
+}
 
 export class Reflect {
     private llm: BaseLLM;
@@ -9,64 +15,56 @@ export class Reflect {
         this.llm = new BaseLLM();
     }
 
-    private buildReflectionPrompt(
-        agent: BaseAgent,
-        lakeState: LakeObservation | null,
-        agentEnergies: AgentEnergyObservation[],
-        recentMemories: Memory[],
-        currentPhase: string
-    ): string {
-        return `You are ${agent.name}, analyzing your recent observations and experiences.
-Focus on understanding patterns, consequences, and strategic implications.
+    private buildReflectionPrompt(state: ReflectionState): string {
+        let prompt = `You are ${state.agentName}, an AI agent in a multiplayer fishing game focused on resource management and social dynamics.
+You must balance personal gain with lake sustainability while interacting with other agents.
 
-Current Phase: ${currentPhase}
+The game alternates between HARVEST phase (where agents can fish) and TOWNHALL phase (where agents discuss and strategize).
+Your decisions affect both your survival (through energy management) and the lake's health.
 
-Lake Status:
-${lakeState ? JSON.stringify(lakeState, null, 2) : 'No lake data available'}
+Your current state and observations:
 
-Agent Energy States:
-${JSON.stringify(agentEnergies, null, 2)}
+`;
 
-Recent Events and Interactions:
-${JSON.stringify(recentMemories, null, 2)}
+        // Add each state section with its content
+        state.sections.forEach(section => {
+            prompt += `=== ${section.title} ===\n`;
+            prompt += `${JSON.stringify(section.content, null, 2)}\n\n`;
+        });
 
-Based on this information:
-1. What patterns do you notice in fishing behavior and lake health?
-2. How are other agents behaving? Are they cooperative or competitive?
-3. What are the implications for lake sustainability?
-4. What strategic adjustments might be needed?
+        prompt += `Based on this information, analyze the current situation and provide strategic insights.
+Consider:
+- Resource management (both personal energy and lake sustainability)
+- Social dynamics and cooperation opportunities
+- Short-term tactics and long-term strategy
+- Risks and opportunities in the current phase
 
-Provide a concise analysis that can inform decision-making.
-Focus on actionable insights rather than just summarizing data.
-Consider both immediate tactical needs and long-term strategic goals.`;
+Provide a concise analysis that can inform your next actions.`;
+
+        return prompt;
     }
 
     public async reflect(agent: BaseAgent): Promise<string | undefined> {
-        const scratchMemory = agent.getScratchMemory();
+        // Collect all state information using the shared StateCollector
+        const completeState = StateCollector.collectCompleteState(agent);
         
-        // Gather all relevant state information
-        const lakeState = scratchMemory.getLakeState();
-        const agentEnergies = scratchMemory.getFreshAgentEnergies();
-        const recentMemories = scratchMemory.getRecentMemories({
-            maxCount: 10,
-            maxAgeMs: 5 * 60 * 1000 // Last 5 minutes
-        });
-        const currentPhase = agent.currentPhase;
+        // Format the state into sections
+        const sections = StateCollector.formatAsSections(completeState);
+
+        // Create reflection state
+        const reflectionState: ReflectionState = {
+            agentName: agent.name,
+            sections
+        };
 
         // Build the reflection prompt
-        const prompt = this.buildReflectionPrompt(
-            agent,
-            lakeState,
-            agentEnergies,
-            recentMemories,
-            currentPhase
-        );
+        const prompt = this.buildReflectionPrompt(reflectionState);
 
         // Generate reflection using LLM
         const messages = [
             {
                 role: "system" as const,
-                content: "You are an AI agent reflecting on your observations and experiences. Provide clear, actionable insights."
+                content: "You are an AI agent in a multiplayer fishing game. Your goal is to survive and thrive while maintaining lake sustainability through strategic fishing and social cooperation. Analyze your current state and provide actionable insights."
             },
             {
                 role: "user" as const,

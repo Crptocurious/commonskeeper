@@ -3,6 +3,7 @@ import { BaseAgent } from "../../BaseAgent";
 import { Player, PlayerEntity } from "hytopia";
 import type { AgentBehavior } from "../../BaseAgent";
 import { BaseLLM } from "../BaseLLM";
+import { StateCollector } from './State';
 
 type MessageType = "Player" | "Environment" | "Agent";
 
@@ -155,31 +156,17 @@ Remember that you do not need to speak to Environment. You just need to think in
 
             agent.getScratchMemory().addChatMemory('user', message, type, prefix);
 
-            const currentState = agent.getCurrentState();
-            const nearbyEntities = agent.getNearbyEntities().map((e) => ({
-                name: e.name,
-                type: e.type,
-                state: e instanceof BaseAgent ? e.getCurrentState() : undefined,
-            }));
-
-            // Get all available data from scratch memory
-            const scratchMemory = agent.getScratchMemory();
-            const recentMemories = scratchMemory.getRecentMemories({
-                maxCount: 5,
-                maxAgeMs: 5 * 60 * 1000 // Last 5 minutes
-            });
-
-            const recentAgentEnergies = scratchMemory.getFreshAgentEnergies();
-            const lakeState = scratchMemory.getLakeState();
-            const selfEnergy = scratchMemory.getSelfEnergy();
+            // Use StateCollector to get complete state
+            const completeState = StateCollector.collectCompleteState(agent);
 
             const userMessage = `${prefix}${message}
-State: ${JSON.stringify(currentState)}
-Nearby: ${JSON.stringify(nearbyEntities)}
-Recent Memories: ${JSON.stringify(recentMemories)}
-Recent Agent Energies: ${JSON.stringify(recentAgentEnergies)}
-Lake State: ${JSON.stringify(lakeState)}
-Self Energy History: ${JSON.stringify(selfEnergy)}`;
+State: ${JSON.stringify(completeState.agentState)}
+Game State: ${JSON.stringify(completeState.gameState)}
+Nearby: ${JSON.stringify(completeState.nearbyEntities)}
+Recent Memories: ${JSON.stringify(completeState.recentMemories)}
+Recent Agent Energies: ${JSON.stringify(completeState.agentEnergies)}
+Lake State: ${JSON.stringify(completeState.lakeState)}
+Self Energy History: ${JSON.stringify(completeState.selfEnergy)}`;
 
             // Convert chat history to OpenAI format and add current message
             const messages = this.convertToOpenAIMessages(agent);
