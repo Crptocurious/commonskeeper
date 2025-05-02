@@ -19,6 +19,7 @@ import { Plan } from "./brain/cognitive/Plan";
 import { Perceive } from "./brain/cognitive/Perceive";
 import { ScratchMemory } from "./brain/memory/ScratchMemory";
 import type { Lake } from "./Lake";
+import { CognitiveCycle } from "./brain/cognitive/CognitiveCycle";
 
 // --- Added GameContext Interface ---
 // Define a context interface to pass necessary game state to agent updates
@@ -74,6 +75,7 @@ export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
 	private internalMonologue: string[] = [];
 	private lastActionTick: number = 0;
+	private lastReflectionTick: number = 0; // Added: Track last reflection time
 	private currentTick: number = 0;
 	private chatUI: SceneUI;
 	private inventory: Map<string, InventoryItem> = new Map();
@@ -81,6 +83,7 @@ export class BaseAgent extends Entity {
 	private plan: Plan;
 	private perceive: Perceive;
 	private scratchMemory: ScratchMemory;
+	private cognitiveCycle: CognitiveCycle;
 
 	public isDead: boolean = false; // Added property to track death state
 	public currentPhase: 'HARVEST' | 'TOWNHALL' = 'TOWNHALL'; // Added: Store current phase
@@ -105,6 +108,7 @@ export class BaseAgent extends Entity {
 		this.scratchMemory = new ScratchMemory(this.name);
 		this.perceive = new Perceive(this.name);
 		this.plan = new Plan(options.systemPrompt);
+		this.cognitiveCycle = new CognitiveCycle();
 		
 		this.chatUI = new SceneUI({
 			templateId: "agent-chat",
@@ -343,12 +347,8 @@ export class BaseAgent extends Entity {
 			"Environment trigger for agent " + this.name + ":",
 			message
 		);
-		// We can keep using the ChatOptions interface here too
-		const options: ChatOptions = {
-			type: "Environment",
-			message,
-		};
-		this.plan.chat(this, options);
+		// Use the cognitive cycle instead of directly calling plan
+		this.cognitiveCycle.executeCycle(this, this.plan, message);
 	}
 
 	/**
@@ -500,5 +500,20 @@ export class BaseAgent extends Entity {
 
 	public getScratchMemory(): ScratchMemory {
 		return this.scratchMemory;
+	}
+
+	// Add getter for lastReflectionTick
+	public getLastReflectionTick(): number {
+		return this.lastReflectionTick;
+	}
+
+	// Add setter for lastReflectionTick
+	public updateLastReflectionTick(tick: number): void {
+		this.lastReflectionTick = tick;
+	}
+
+	// Add getter for currentTick
+	public getCurrentTick(): number {
+		return this.currentTick;
 	}
 }
