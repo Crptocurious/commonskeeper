@@ -73,12 +73,11 @@ interface ChatOptions {
 export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
 	private internalMonologue: string[] = [];
-	private lastActionTime: number = Date.now();
-	private inactivityCheckInterval?: ReturnType<typeof setInterval>;
-	private readonly INACTIVITY_THRESHOLD = 30000; // 30 seconds in milliseconds
+	private lastActionTick: number = 0;
+	private currentTick: number = 0;
 	private chatUI: SceneUI;
 	private inventory: Map<string, InventoryItem> = new Map();
-	private energyManager: EnergyManager;
+	public energyManager: EnergyManager;
 	private plan: Plan;
 	private perceive: Perceive;
 	private scratchMemory: ScratchMemory;
@@ -107,17 +106,6 @@ export class BaseAgent extends Entity {
 		this.perceive = new Perceive(this.name);
 		this.plan = new Plan(options.systemPrompt);
 		
-		// Start inactivity checker when agent is created
-		this.inactivityCheckInterval = setInterval(() => {
-			const timeSinceLastAction = Date.now() - this.lastActionTime;
-			if (timeSinceLastAction >= this.INACTIVITY_THRESHOLD) {
-				this.handleEnvironmentTrigger(
-					"You have been inactive for a while. What would you like to do?"
-				);
-				this.lastActionTime = Date.now(); // Reset timer
-			}
-		}, 5000); // Check every 5 seconds
-
 		this.chatUI = new SceneUI({
 			templateId: "agent-chat",
 			attachedToEntity: this,
@@ -137,6 +125,7 @@ export class BaseAgent extends Entity {
 		this.currentPhase = context.currentPhase;
 		this.lastHarvestReports = context.lastHarvestReports || {}; // Store reports
 		this.broadcastPublicMessage = context.broadcastPublicMessage; // Store broadcast function
+		this.currentTick = context.currentTick; // Store current tick
 
 		const previousEnergyState = this.energyManager.getState();
 		this.energyManager.decayTick();
@@ -183,17 +172,31 @@ export class BaseAgent extends Entity {
 
 		// --- Add LLM Tick Trigger Logic ---
 		// Decide if the agent should think/plan based on phase, energy, etc.
-		// For now, let's trigger a thought process periodically or on phase change (simplified)
 		const lastPhaseMemory = this.scratchMemory.getRecentMemories({ types: ['phase_change'], maxCount: 1 })[0];
 		const lastKnownPhase = lastPhaseMemory ? lastPhaseMemory.content : null;
-		const shouldTriggerLLM = (context.currentTick % (60 * 5) === 0) || (this.currentPhase !== lastKnownPhase);
+		const ticksSinceLastAction = context.currentTick - this.lastActionTick;
+		const isInactive = ticksSinceLastAction >= (60 * 5);
+		const phaseChanged = this.currentPhase !== lastKnownPhase;
+		
+		if (isInactive || phaseChanged) {
+			// Store the new phase in memory if it changed
+			if (phaseChanged) {
+				this.scratchMemory.addMemory({ type: 'phase_change', content: this.currentPhase, timestamp: Date.now() });
+			}
 
-		if (shouldTriggerLLM) {
-			// Store the new phase in memory
-			this.scratchMemory.addMemory({ type: 'phase_change', content: this.currentPhase, timestamp: Date.now() });
+			// Construct message based on triggers
+			let message = "";
+			if (isInactive) {
+				message += `You have been inactive for ${ticksSinceLastAction} ticks. `;
+			}
+			if (phaseChanged) {
+				message += `The phase has changed to ${this.currentPhase}. `;
+			}
+			message += `Current Tick: ${context.currentTick}. Phase: ${this.currentPhase}. Check your state and decide on actions.`;
+
 			console.log(`Agent ${this.name}: Triggering LLM reasoning. Tick: ${context.currentTick}, Phase: ${this.currentPhase}`);
-			this.plan.chat(this, { type: "Environment", message: "Current Tick: " + context.currentTick + ". Phase: " + this.currentPhase + ". Check your state and decide on actions." });
-			this.lastActionTime = Date.now(); // Reset inactivity timer when LLM is triggered
+			this.handleEnvironmentTrigger(message);
+			this.lastActionTick = context.currentTick; // Reset last action tick
 		}
 		// --- End LLM Tick Trigger Logic ---
 
@@ -285,7 +288,7 @@ export class BaseAgent extends Entity {
 		if (!this.world) return;
 		let results: string[] = [];
 		console.log(`Agent ${this.name} handling tool call:`, toolName, args);
-		this.lastActionTime = Date.now(); // Update activity time on any tool call
+		this.lastActionTick = this.currentTick; // Reset last action tick using stored tick value
 
 		// --- Phase/Tool Specific Logic --- 
 		if (toolName === 'townhall_speak' && this.currentPhase === 'TOWNHALL') {
@@ -400,9 +403,6 @@ export class BaseAgent extends Entity {
 
 	// Clean up interval when agent is destroyed
 	public despawn(): void {
-		if (this.inactivityCheckInterval) {
-			clearInterval(this.inactivityCheckInterval);
-		}
 		super.despawn();
 	}
 
@@ -491,7 +491,7 @@ export class BaseAgent extends Entity {
 	}
 
 	public updateLastActionTime() {
-		this.lastActionTime = Date.now();
+		this.lastActionTick = this.currentTick;
 	}
 
 	public addInternalMonologue(thought: string) {
