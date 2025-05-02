@@ -52,9 +52,9 @@ import { Lake } from "./src/Lake";
 import { logEvent } from "./src/logger";
 
 // --- Simulation Constants ---
-const MAX_ENERGY = 100; // Assuming this is the intended max energy
-const ENERGY_PER_FISH = 25; // Energy gained per fish eaten
-const LOW_ENERGY_THRESHOLD = 30; // Threshold below which agents try to eat
+export const MAX_ENERGY = 100; // Assuming this is the intended max energy
+export const ENERGY_PER_FISH = 25; // Energy gained per fish eaten
+export const LOW_ENERGY_THRESHOLD = 30; // Threshold below which agents try to eat
 // --- End Simulation Constants ---
 
 // --- Global Variables ---
@@ -72,16 +72,26 @@ const LOCATIONS = {
 let currentFishingTurnIndex = 0;
 // --- End Added Turn-Based Fishing Tracking ---
 
-// --- Time and Phase Configuration (Moved Before Prompts) ---
-const TICKS_PER_HOUR = 60 * 60; // Assuming 60 ticks per second, 60 seconds per minute
+// --- Time and Phase Configuration ---
+const TICKS_PER_SECOND = 60; // Running at 60 TPS
+const TICKS_PER_MINUTE = TICKS_PER_SECOND * 60;
+const TICKS_PER_HOUR = TICKS_PER_MINUTE * 60;
 const TICKS_PER_DAY = TICKS_PER_HOUR * 24;
+
+// Real-time duration settings
 const HARVEST_WINDOW_DURATION_MINUTES = 10;
 const TOWNHALL_DURATION_MINUTES = 50;
 
-const ticksPerMinute = TICKS_PER_HOUR / 60;
-const harvestWindowTicks = HARVEST_WINDOW_DURATION_MINUTES * ticksPerMinute;
-const townhallDurationTicks = TOWNHALL_DURATION_MINUTES * ticksPerMinute;
-const totalCycleTicks = harvestWindowTicks + townhallDurationTicks;
+// Calculate actual ticks for each phase
+const harvestWindowTicks = HARVEST_WINDOW_DURATION_MINUTES * TICKS_PER_MINUTE;  // 10 minutes * 3600 ticks/minute = 36000 ticks
+const townhallDurationTicks = TOWNHALL_DURATION_MINUTES * TICKS_PER_MINUTE;    // 50 minutes * 3600 ticks/minute = 180000 ticks
+const totalCycleTicks = harvestWindowTicks + townhallDurationTicks;            // Total 60 minute cycle = 216000 ticks
+
+// For debugging/logging
+console.log(`Time Configuration (60 TPS):
+  - Harvest Window: ${HARVEST_WINDOW_DURATION_MINUTES} minutes (${harvestWindowTicks} ticks)
+  - Townhall Duration: ${TOWNHALL_DURATION_MINUTES} minutes (${townhallDurationTicks} ticks)
+  - Total Cycle: ${totalCycleTicks} ticks (${HARVEST_WINDOW_DURATION_MINUTES + TOWNHALL_DURATION_MINUTES} minutes)`);
 
 // --- Reusable Fisherman Behaviors Config & Context ---
 interface BehaviorConfig {
@@ -100,11 +110,9 @@ const fishermanBehaviorConfigs: BehaviorConfig[] = [
     { type: PathfindingBehavior },
     { type: SpeakBehavior },
     { type: TradeBehavior },
-    { type: FishingBehavior, args: ['lake'] }
+    { type: FishingBehavior, args: ['lake'] },
+    { type: EatBehavior }
 ];
-
-// *** ADD EatBehavior to the default list ***
-fishermanBehaviorConfigs.push({ type: EatBehavior });
 
 // --- Specific Agent Config Structure ---
 interface SpecificAgentConfig {
@@ -172,18 +180,18 @@ ${commonAgentInstructions_CurrentLogic}
 
 // --- Define the 3 Specific Agents --- (Using Revised Prompts)
 const specificAgentConfigs: SpecificAgentConfig[] = [
-    {
-        name: "John",
-        systemPrompt: johnPrompt_CurrentLogic,
-        behaviorConfigs: fishermanBehaviorConfigs,
-        spawnLocation: new Vector3(30, 3, 55) // Location 1 (Adjust if needed)
-    },
-    {
-        name: "Kate",
-        systemPrompt: katePrompt_CurrentLogic,
-        behaviorConfigs: fishermanBehaviorConfigs,
-        spawnLocation: new Vector3(33, 3, 56) // Location 2
-    },
+    // {
+    //     name: "John",
+    //     systemPrompt: johnPrompt_CurrentLogic,
+    //     behaviorConfigs: fishermanBehaviorConfigs,
+    //     spawnLocation: new Vector3(30, 3, 55) // Location 1 (Adjust if needed)
+    // },
+    // {
+    //     name: "Kate",
+    //     systemPrompt: katePrompt_CurrentLogic,
+    //     behaviorConfigs: fishermanBehaviorConfigs,
+    //     spawnLocation: new Vector3(33, 3, 56) // Location 2
+    // },
     {
         name: "Jack",
         systemPrompt: jackPrompt_CurrentLogic,
@@ -320,7 +328,7 @@ startServer((world) => {
     gameWorld.currentPhase = 'TOWNHALL'; // Start with TOWNHALL
     gameWorld.lastHarvestReports = {}; // Initialize harvest reports
 
-    console.log(`Simulation Config: TicksPerMin=${ticksPerMinute}, HarvestTicks=${harvestWindowTicks}, TownhallTicks=${townhallDurationTicks}, CycleTicks=${totalCycleTicks}`);
+    console.log(`Simulation Config: TicksPerMin=${TICKS_PER_MINUTE}, HarvestTicks=${harvestWindowTicks}, TownhallTicks=${townhallDurationTicks}, CycleTicks=${totalCycleTicks}`);
     console.log(`Lake Config: Capacity=${LAKE_CAPACITY}, Collapse Threshold <= ${LAKE_COLLAPSE_THRESHOLD}`);
 
     // --- Spawn Specific Agents ---
