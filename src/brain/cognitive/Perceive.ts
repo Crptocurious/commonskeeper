@@ -1,88 +1,75 @@
-import type { Lake } from '../../Lake';
-import type { EnergyManager } from '../../EnergyManager';
-import { ScratchMemory } from '../memory/ScratchMemory';
-import { logEvent } from '../../logger';
-
-export interface AgentObservation {
-  agentId: string;
-  energyManager: EnergyManager;
-}
+import type { Lake } from "../../Lake";
+import type { GameState, LakeState, PhaseState, CycleState } from "../../types/GameState";
+import type { ScratchMemory } from "../memory/ScratchMemory";
 
 export class Perceive {
-  private scratchMemory: ScratchMemory;
-  private lastPerceptionTime: number = 0;
-  private perceptionIntervalMs: number;
+    private agentId: string;
+    private lastPerceptionTick: number = 0;
+    private readonly PERCEPTION_INTERVAL = 100; // Update every 100 ticks
+    private scratchMemory: ScratchMemory;
 
-  constructor(
-    selfId: string,
-    perceptionIntervalMs: number = 1000 // Minimum time between perceptions
-  ) {
-    this.scratchMemory = new ScratchMemory(selfId);
-    this.perceptionIntervalMs = perceptionIntervalMs;
-  }
-
-  /**
-   * Perceive the lake's current state
-   */
-  perceiveLake(lake: Lake): void {
-    const now = Date.now();
-    if (now - this.lastPerceptionTime < this.perceptionIntervalMs) {
-      return; // Too soon to perceive again
+    constructor(agentId: string, scratchMemory: ScratchMemory) {
+        this.agentId = agentId;
+        this.scratchMemory = scratchMemory;
     }
 
-    const lakeState = lake.getState();
-    const observation = {
-      stock: lakeState.stock,
-      capacity: lakeState.capacity,
-      isCollapsed: lake.isCollapsed()
-    };
-
-    this.scratchMemory.updateLakeObservation(observation);
-    
-    // Log significant changes or critical states
-    if (observation.stock <= observation.capacity * 0.2) { // Lake at 20% or less
-      logEvent({
-        type: 'lake_critical',
-        stock: observation.stock,
-        capacity: observation.capacity,
-        percentageRemaining: (observation.stock / observation.capacity) * 100
-      });
+    public perceiveLake(lake: Lake): void {
+        const lakeState: LakeState = {
+            currentStock: lake.getCurrentStock(),
+            maxCapacity: lake.getMaxCapacity(),
+            lastUpdateTick: lake.getLastUpdateTick()
+        };
+        this.updateGameState({ lake: lakeState });
     }
 
-    this.lastPerceptionTime = now;
-  }
-
-  /**
-   * Perceive energy levels of visible agents
-   * Returns number of agents successfully observed
-   */
-  perceiveAgentEnergies(visibleAgents: AgentObservation[]): number {
-    const now = Date.now();
-    if (now - this.lastPerceptionTime < this.perceptionIntervalMs) {
-      return 0; // Too soon to perceive again
+    public perceivePhase(currentPhase: 'HARVEST' | 'TOWNHALL', currentTick: number): void {
+        const lastPhaseState = this.scratchMemory.getLastGameState()?.phase;
+        
+        const phaseState: PhaseState = {
+            currentPhase,
+            lastPhase: lastPhaseState?.currentPhase || null,
+            phaseStartTick: currentTick
+        };
+        this.updateGameState({ phase: phaseState });
     }
 
-    // Clear old observations before new perception
-    this.scratchMemory.clearStaleObservations();
-    
-    for (const agent of visibleAgents) {
-      const energyState = agent.energyManager.getState();
-      this.scratchMemory.updateAgentEnergy(agent.agentId, energyState);
-
-      // Log critical energy states
-      if (energyState.currentEnergy <= energyState.maxEnergy * 0.2) { // Agent at 20% or less energy
-        logEvent({
-          type: 'agent_critical_energy',
-          agentId: agent.agentId,
-          currentEnergy: energyState.currentEnergy,
-          maxEnergy: energyState.maxEnergy,
-          percentageRemaining: (energyState.currentEnergy / energyState.maxEnergy) * 100
-        });
-      }
+    public perceiveCycle(currentCycle: number, currentTick: number): void {
+        const lastCycleState = this.scratchMemory.getLastGameState()?.cycle;
+        
+        const cycleState: CycleState = {
+            currentCycle,
+            lastCycle: lastCycleState?.currentCycle || currentCycle - 1,
+            cycleStartTick: currentTick
+        };
+        this.updateGameState({ cycle: cycleState });
     }
 
-    this.lastPerceptionTime = now;
-    return visibleAgents.length;
-  }
+    public shouldUpdate(currentTick: number): boolean {
+        return currentTick - this.lastPerceptionTick >= this.PERCEPTION_INTERVAL;
+    }
 
-} 
+    private updateGameState(partialState: Partial<GameState>): void {
+        const currentState = this.scratchMemory.getLastGameState() || {
+            lake: { currentStock: 0, maxCapacity: 0, lastUpdateTick: 0 },
+            phase: { currentPhase: 'TOWNHALL', lastPhase: null, phaseStartTick: 0 },
+            cycle: { currentCycle: 0, lastCycle: 0, cycleStartTick: 0 },
+            lastUpdateTick: 0
+        };
+
+        const newState: GameState = {
+            ...currentState,
+            ...partialState,
+            lastUpdateTick: Date.now()
+        };
+
+        this.scratchMemory.updateGameState(newState);
+        this.lastPerceptionTick = newState.lastUpdateTick;
+    }
+
+    // Force an immediate update of all game state components
+    public forceGameStateUpdate(lake: Lake, currentPhase: 'HARVEST' | 'TOWNHALL', currentCycle: number, currentTick: number): void {
+        this.perceiveLake(lake);
+        this.perceivePhase(currentPhase, currentTick);
+        this.perceiveCycle(currentCycle, currentTick);
+    }
+}
