@@ -1,6 +1,7 @@
 import { World } from "hytopia"; // Assuming World might be needed later, keep for now? Or remove? Let's keep for now just in case.
 import { EventEmitter } from "events";
 import { logEvent } from "./logger";
+import type { LakeState } from "./types/GameState";
 
 export const EVENT_COLLAPSE = 'lake:collapse'; // Define event name for potential future use
 
@@ -17,13 +18,14 @@ export class Lake extends EventEmitter {
    * @param capacity - Maximum fish the lake can hold.
    * @param initialStock - Starting number of fish.
    * @param regenRate - Number of fish regenerated each simulation tick/call to regenerate().
+   * @param currentTick - The current game tick.
    */
-  constructor(capacity: number, initialStock: number, regenRate: number) {
+  constructor(capacity: number, initialStock: number, regenRate: number, currentTick: number) {
     super();
     this.capacity = capacity;
     this.currentStock = Math.min(initialStock, capacity); // Ensure initial stock doesn't exceed capacity
     this.regenRate = regenRate;
-    this.lastUpdateTick = 0;
+    this.lastUpdateTick = currentTick;
 
     // Initialize collapse state based on initial stock
     if (this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
@@ -37,6 +39,7 @@ export class Lake extends EventEmitter {
            initialStock: initialStock, // Log the stock it started with
            threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
            capacity: this.capacity,
+           lastUpdateTick: this.lastUpdateTick
        });
     } else if (this.currentStock <= 0) {
         // Handle case where initial stock is <= 0 but somehow above threshold (unlikely with threshold > 0)
@@ -48,6 +51,7 @@ export class Lake extends EventEmitter {
            reason: "Initial stock zero or negative",
            initialStock: initialStock,
            capacity: this.capacity,
+           lastUpdateTick: this.lastUpdateTick
        });
     }
   }
@@ -56,9 +60,11 @@ export class Lake extends EventEmitter {
    * Updates the fish stock by doubling it, up to capacity.
    * Does nothing if the lake is collapsed.
    * Should be called periodically (e.g., once per round/day) by the simulation.
+   * @param currentTick - The current game tick.
+   * @param world - Optional world instance to update UI.
    * Emits 'lakeUpdated' event if world is provided.
    */
-  regenerate(world?: any): void {
+  regenerate(currentTick: number, world?: any): void {
     // Do not regenerate if the lake is permanently collapsed
     if (this.isCollapsed()) {
         return;
@@ -75,6 +81,7 @@ export class Lake extends EventEmitter {
             stockAfter = this.capacity;
         }
         this.currentStock = stockAfter;
+        this.lastUpdateTick = currentTick;
     }
     // Else: stock is 0 or at capacity, no change from doubling rule
 
@@ -85,7 +92,8 @@ export class Lake extends EventEmitter {
             stockBefore: stockBefore,
             stockAfter: stockAfter,
             capacity: this.capacity,
-            isCollapsed: this._isCollapsed // Should always be false here
+            isCollapsed: this._isCollapsed, // Should always be false here
+            lastUpdateTick: this.lastUpdateTick
         });
     }
 
@@ -98,13 +106,15 @@ export class Lake extends EventEmitter {
    * Checks if the lake should collapse based on the current stock level.
    * Should be called after all harvesting in a round/step is complete, before regeneration.
    * Sets the persistent collapse state if the threshold is met.
+   * @param currentTick - The current game tick.
    */
-  checkCollapse(): void {
+  checkCollapse(currentTick: number): void {
       // Check only if not already collapsed
       if (!this._isCollapsed && this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
           console.warn(`Lake collapsed! Stock (${this.currentStock}) reached collapse threshold (${this.capacity * this.COLLAPSE_THRESHOLD_PERCENT}).`);
           this._isCollapsed = true;
           this.currentStock = 0; // Permanently deplete stock on collapse
+          this.lastUpdateTick = currentTick;
 
           // Log collapse event
           logEvent({
@@ -113,6 +123,7 @@ export class Lake extends EventEmitter {
               threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
               stockAtCollapseTrigger: this.currentStock, // Will be 0 now
               capacity: this.capacity,
+              lastUpdateTick: this.lastUpdateTick
           });
           this.emit(EVENT_COLLAPSE); // Emit collapse event
       }
@@ -121,11 +132,12 @@ export class Lake extends EventEmitter {
   /**
    * Attempts to harvest a specified amount of fish.
    * @param amount - The amount of fish the agent tries to harvest.
-   * @param world - The world instance to update UI.
+   * @param currentTick - The current game tick.
+   * @param world - Optional world instance to update UI.
    * @returns The actual amount of fish successfully harvested.
    * Emits 'lakeUpdated' event if world is provided.
    */
-  harvest(amount: number, world?: any): number {
+  harvest(amount: number, currentTick: number, world?: any): number {
     if (amount <= 0) {
       return 0; // Cannot harvest zero or negative fish
     }
@@ -142,20 +154,17 @@ export class Lake extends EventEmitter {
 
     const harvestedAmount = Math.min(amount, this.currentStock);
     this.currentStock -= harvestedAmount;
-
-    // Log the harvest event if successful
+    
     if (harvestedAmount > 0) {
+      this.lastUpdateTick = currentTick;
       logEvent({
           type: "lake_harvest",
           requestedAmount: amount,
           harvestedAmount: harvestedAmount,
           stockRemaining: this.currentStock,
+          lastUpdateTick: this.lastUpdateTick
       });
     }
-
-    // Collapse check is now handled by checkCollapse() method, called externally by simulation loop
-    // Remove the immediate check from here:
-    // if (this.currentStock <= 0) { ... }
 
     if (world) {
       this.emit('lakeUpdated', world, this);
@@ -166,12 +175,16 @@ export class Lake extends EventEmitter {
 
   /**
    * Gets the current state of the lake.
-   * @returns An object containing the current stock and capacity.
+   * @returns A LakeState object containing all current lake state properties.
    */
-  getState(): { stock: number; capacity: number } {
+  getState(): LakeState {
     return {
-      stock: this.currentStock,
-      capacity: this.capacity,
+      currentStock: this.currentStock,
+      maxCapacity: this.capacity,
+      lastUpdateTick: this.lastUpdateTick,
+      isCollapsed: this._isCollapsed,
+      regenRate: this.regenRate,
+      collapseThreshold: this.COLLAPSE_THRESHOLD_PERCENT
     };
   }
 

@@ -15,7 +15,6 @@ import {
 
 import { logEvent } from "./logger";
 import { EnergyManager, type EnergyState } from "./EnergyManager";
-import { Plan } from "./brain/cognitive/Plan";
 import { Perceive } from "./brain/cognitive/Perceive";
 import { ScratchMemory } from "./brain/memory/ScratchMemory";
 import type { Lake } from "./Lake";

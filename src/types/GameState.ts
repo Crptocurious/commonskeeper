@@ -2,6 +2,9 @@ export interface LakeState {
     currentStock: number;
     maxCapacity: number;
     lastUpdateTick: number;
+    isCollapsed: boolean;
+    regenRate: number;
+    collapseThreshold: number;  // As a percentage of maxCapacity
 }
 
 export interface PhaseState {

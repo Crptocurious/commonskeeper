@@ -62,7 +62,7 @@ const agents: BaseAgent[] = []; // Global array to track spawned agents
 const CHAT_RANGE = 10;
 const LAKE_CAPACITY = 100; // INCREASED: Match Lake instance capacity
 const LAKE_COLLAPSE_THRESHOLD = LAKE_CAPACITY * 0.10; // UPDATED: 10% of new capacity (10 fish)
-const lake = new Lake(LAKE_CAPACITY, LAKE_CAPACITY, 1); // UPDATED: Lake instance (Capacity 100, Initial 100)
+const lake = new Lake(LAKE_CAPACITY, LAKE_CAPACITY, 1, 0); // Initialize with currentTick = 0
 
 const LOCATIONS = {
 	pier: new Vector3(31.5, 3, 59.5)
@@ -254,20 +254,19 @@ interface GameWorld extends World {
 
 // --- UI Update Helpers ---
 function sendLakeStatusUpdate(world: World, lakeInstance: Lake) {
-	const { stock, capacity } = lakeInstance.getState();
-    const isCollapsed = lakeInstance.isCollapsed();
-	const playerEntities = world.entityManager.getAllPlayerEntities();
-	playerEntities.forEach((playerEntity: any) => {
-		const player = playerEntity?.player; // Optional chaining for safety
-		if (player && player.ui) {
-			player.ui.sendData({
-				type: 'lakeUpdate',
-				stock: stock,
-				capacity: capacity,
-                isCollapsed: isCollapsed
-			});
-		}
-	});
+    const lakeState = lakeInstance.getState();
+    const playerEntities = world.entityManager.getAllPlayerEntities();
+    playerEntities.forEach((playerEntity: any) => {
+        const player = playerEntity?.player; // Optional chaining for safety
+        if (player && player.ui) {
+            player.ui.sendData({
+                type: 'lakeUpdate',
+                stock: lakeState.currentStock,
+                capacity: lakeState.maxCapacity,
+                isCollapsed: lakeState.isCollapsed
+            });
+        }
+    });
 }
 
 function sendPhaseUpdate(world: World, phase: GamePhase) {
@@ -346,8 +345,8 @@ startServer((world) => {
     console.log(`\n--- Simulation Initializing ---`);
     console.log(`Starting Tick: ${gameWorld.currentTimeTicks}`); // Should output 0
     const initialLakeState = lake.getState(); // Get current state after init
-    console.log(`Initial Lake Stock: ${initialLakeState.stock}/${initialLakeState.capacity}`); // Check initial stock
-    console.log(`Initial Lake Collapsed: ${lake.isCollapsed()}`);
+    console.log(`Initial Lake Stock: ${initialLakeState.currentStock}/${initialLakeState.maxCapacity}`); // Check initial stock
+    console.log(`Initial Lake Collapsed: ${initialLakeState.isCollapsed}`);
     console.log(`Number of Agents Spawned: ${agents.length}`); // Check agent count
     console.log(`Initial Phase: ${gameWorld.currentPhase}`);
     console.log(`--- Starting Game Loop ---`);
@@ -363,7 +362,7 @@ startServer((world) => {
         // Start of Cycle / Trigger Regeneration / Start HARVEST Phase
         if (tickInCycle === 0 && currentTick > 0) { // Skip regen/phase change on tick 0
             console.log(`Tick ${currentTick}: Starting new cycle. Regenerating lake.`);
-            lake.regenerate();
+            lake.regenerate(currentTick);
             sendLakeStatusUpdate(gameWorld, lake);
 
             if (currentPhase !== 'HARVEST') {
@@ -379,16 +378,14 @@ startServer((world) => {
         // --- End of Harvest Window / Trigger Collapse Check / Start TOWNHALL Phase ---
         if (tickInCycle === harvestWindowTicks && currentTick > 0) { // Check end of harvest window
             console.log(`Tick ${currentTick}: Harvest window ending. Checking lake collapse.`);
-            lake.checkCollapse();
+            lake.checkCollapse(currentTick);
             sendLakeStatusUpdate(gameWorld, lake);
 
             if (currentPhase !== 'TOWNHALL') {
                 gameWorld.currentPhase = 'TOWNHALL';
                 logEvent({ type: 'PHASE_START', phase: 'TOWNHALL', tick: currentTick, durationTicks: townhallDurationTicks });
                 sendPhaseUpdate(gameWorld, gameWorld.currentPhase);
-                 console.log(`Tick ${currentTick}: Phase changed to TOWNHALL.`);
-                 // Agent logic should now handle reporting harvests based on this phase
-                 // BaseAgent.buildContext needs to populate state.lastHarvestReports based on actual harvest actions
+                console.log(`Tick ${currentTick}: Phase changed to TOWNHALL.`);
             }
         }
 
@@ -444,7 +441,8 @@ startServer((world) => {
 
 		// Optional: Periodic Log
 		if (currentTick > 0 && currentTick % (TICKS_PER_HOUR / 4) === 0) {
-		    console.log(`Tick: ${currentTick}, Phase: ${gameWorld.currentPhase}, Lake Stock: ${lake.getState().stock}`);
+		    const currentLakeState = lake.getState();
+		    console.log(`Tick: ${currentTick}, Phase: ${gameWorld.currentPhase}, Lake Stock: ${currentLakeState.currentStock}`);
 		}
 
         // Increment tick
@@ -459,26 +457,34 @@ startServer((world) => {
 	world.loadMap(worldMap);
 
     // --- Initial Logging and UI Updates ---
-	const lakeState = lake.getState();
-    const isInitiallyCollapsed = lake.isCollapsed();
-	logEvent({
-		type: "game_start",
+    const lakeState = lake.getState();
+    const isInitiallyCollapsed = lakeState.isCollapsed;
+    console.log(`Starting Tick: ${gameWorld.currentTimeTicks}`); // Should output 0
+    console.log(`Initial Lake Stock: ${lakeState.currentStock}/${lakeState.maxCapacity}`); // Check initial stock
+    console.log(`Initial Lake Collapsed: ${isInitiallyCollapsed}`);
+    console.log(`Number of Agents Spawned: ${agents.length}`); // Check agent count
+    console.log(`Initial Phase: ${gameWorld.currentPhase}`);
+    console.log(`--- Starting Game Loop ---`);
+
+    // Initial event logging
+    logEvent({
+        type: "game_start",
         tick: gameWorld.currentTimeTicks,
-		lake_config: {
-			capacity: lakeState.capacity,
-			initial_stock_value: lakeState.stock,
+        lake_config: {
+            capacity: lakeState.maxCapacity,
+            initial_stock_value: lakeState.currentStock,
             is_initially_collapsed: isInitiallyCollapsed,
             collapse_threshold: LAKE_COLLAPSE_THRESHOLD
-		},
+        },
         phase_config: {
             harvest_window_ticks: harvestWindowTicks,
             townhall_duration_ticks: townhallDurationTicks,
             total_cycle_ticks: totalCycleTicks
         },
-		agents: agents.map(agent => ({ // Log the dynamically spawned agents
-			name: agent.name
-		}))
-	});
+        agents: agents.map(agent => ({
+            name: agent.name
+        }))
+    });
     logEvent({ type: 'PHASE_START', phase: gameWorld.currentPhase, tick: gameWorld.currentTimeTicks, durationTicks: townhallDurationTicks });
     sendPhaseUpdate(gameWorld, gameWorld.currentPhase);
     sendLakeStatusUpdate(gameWorld, lake);
