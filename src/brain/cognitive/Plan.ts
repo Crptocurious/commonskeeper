@@ -6,7 +6,8 @@ import { BaseLLM } from "../BaseLLM";
 
 type MessageType = "Player" | "Environment" | "Agent";
 
-interface ChatOptions {
+// Export the ChatOptions interface
+export interface ChatOptions {
     type: MessageType;
     message: string;
     player?: Player;
