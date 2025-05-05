@@ -60,9 +60,9 @@ export class FishingBehavior implements AgentBehavior {
 			console.log("Fishing tool called");
 
 			// --- Phase and Turn Check ---
-			if (agent.currentAgentPhase !== 'HARVEST') {
+			if (agent.currentAgentPhase !== 'HARVESTING') {
 				console.log(`${agent.name} tried to fish during ${agent.currentAgentPhase} phase.`);
-				return `You can only fish during the HARVEST phase. It is currently ${agent.currentAgentPhase}.`;
+				return `You can only fish during the HARVESTING phase. It is currently ${agent.currentAgentPhase}.`;
 			}
 
 			// Log the attempt

@@ -45,7 +45,7 @@ export class BaseAgent extends Entity {
 	private scratchMemory: ScratchMemory;
 	private cognitiveCycle: CognitiveCycle;
 	public currentAgentTick: number = 0;
-	public currentAgentPhase: GamePhase = 'TOWNHALL';
+	public currentAgentPhase: GamePhase = 'PLANNING';
 	public lastAgentPhase: GamePhase | null = null;
 	public inventory: Map<string, InventoryItem> = new Map();
 	private currentLakeState: LakeState = {
@@ -211,7 +211,7 @@ export class BaseAgent extends Entity {
 				this.broadcastToNearbyAgents(message, this, toolName === "speak" ? "SPEAK" : "TOWNHALL");
 
 				// Record metric for successful townhall message
-				if (toolName === "townhall_speak" && this.currentAgentPhase === 'TOWNHALL') {
+				if (toolName === "townhall_speak" && this.currentAgentPhase === 'DISCUSSION') {
 					gameWorld.metricsTracker.recordTownhallMessage();
 				}
 
