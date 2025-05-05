@@ -8,6 +8,7 @@ describe("EnergyManager Simulation", () => {
     const targetTicks = 10000;
 
     beforeEach(() => {
+        // Create EnergyManager without an agent for testing
         energyManager = new EnergyManager(maxEnergy, decayRate);
     });
 
@@ -27,7 +28,7 @@ describe("EnergyManager Simulation", () => {
                 expect(state.isDepleted).toBe(false);
                 expect(state.currentEnergy).toBeCloseTo(maxEnergy - (decayRate * i), 1);
             }
-            energyManager.decayTick();
+            energyManager.decay(i);
         }
 
         // Check energy after target ticks
@@ -36,7 +37,7 @@ describe("EnergyManager Simulation", () => {
         expect(finalState.isDepleted).toBe(true);
 
         // Check that further ticks don't change energy
-        energyManager.decayTick();
+        energyManager.decay(targetTicks + 1);
         finalState = energyManager.getState();
         expect(finalState.currentEnergy).toBeCloseTo(0, 1e-12);
         expect(finalState.isDepleted).toBe(true);
@@ -44,13 +45,13 @@ describe("EnergyManager Simulation", () => {
 
     it("should gain energy correctly", () => {
         // Deplete some energy first
-        for (let i = 0; i < 2000; i++) { energyManager.decayTick(); }
+        for (let i = 0; i < 2000; i++) { energyManager.decay(i); }
         const energyAfterDecay = energyManager.getState().currentEnergy;
         expect(energyAfterDecay).toBeCloseTo(maxEnergy - (decayRate * 2000), 1);
 
         // Gain energy
         const gainAmount = 10;
-        energyManager.gainEnergy(gainAmount);
+        energyManager.gainEnergy(gainAmount, 2001);
         const stateAfterGain = energyManager.getState();
         expect(stateAfterGain.currentEnergy).toBeCloseTo(energyAfterDecay + gainAmount, 1);
         expect(stateAfterGain.isDepleted).toBe(false);
@@ -58,23 +59,23 @@ describe("EnergyManager Simulation", () => {
 
     it("should not exceed max energy when gaining energy", () => {
         // Start near max energy by decaying slightly
-        energyManager.decayTick();
-        energyManager.decayTick();
+        energyManager.decay(1);
+        energyManager.decay(2);
         expect(energyManager.getState().currentEnergy).toBeLessThan(maxEnergy);
 
         // Gain energy that would exceed max
         const gainAmount = 10;
-        energyManager.gainEnergy(gainAmount);
+        energyManager.gainEnergy(gainAmount, 3);
         expect(energyManager.getState().currentEnergy).toBe(maxEnergy);
 
         // Try gaining more when already full
-        energyManager.gainEnergy(gainAmount);
+        energyManager.gainEnergy(gainAmount, 4);
         expect(energyManager.getState().currentEnergy).toBe(maxEnergy);
     });
 
-     it("should not gain negative energy", () => {
+    it("should not gain negative energy", () => {
         const initialState = energyManager.getState();
-        energyManager.gainEnergy(-10);
+        energyManager.gainEnergy(-10, 1);
         expect(energyManager.getState().currentEnergy).toBe(initialState.currentEnergy);
     });
 }); 

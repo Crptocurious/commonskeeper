@@ -1,7 +1,7 @@
-import { World } from "hytopia"; // Assuming World might be needed later, keep for now? Or remove? Let's keep for now just in case.
 import { EventEmitter } from "events";
-import { logEvent } from "./logger";
-import type { LakeState } from "./types/GameState";
+// import { logEvent } from "./logger";
+import type { GameWorld, LakeState } from "./types/GameState";
+import { SIMULATION_CONFIG } from "./config/constants";
 
 export const EVENT_COLLAPSE = 'lake:collapse'; // Define event name for potential future use
 
@@ -10,7 +10,7 @@ export class Lake extends EventEmitter {
   readonly capacity: number;
   readonly regenRate: number; // Fish regenerated per tick/call to regenerate()
   private _isCollapsed: boolean = false; // Persistent collapse state
-  private readonly COLLAPSE_THRESHOLD_PERCENT = 0.10; // 10% threshold
+  private readonly COLLAPSE_THRESHOLD_PERCENT = SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD / 100 ;
   private lastUpdateTick: number;
 
   /**
@@ -33,26 +33,26 @@ export class Lake extends EventEmitter {
       this._isCollapsed = true;
       this.currentStock = 0; // Set stock to 0 if starting collapsed
       // Log initial collapse if starting below threshold
-       logEvent({
-           type: "lake_collapse",
-           reason: "Initial stock below threshold",
-           initialStock: initialStock, // Log the stock it started with
-           threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
-           capacity: this.capacity,
-           lastUpdateTick: this.lastUpdateTick
-       });
+      //  logEvent({
+      //      type: "lake_collapse",
+      //      reason: "Initial stock below threshold",
+      //      initialStock: initialStock, // Log the stock it started with
+      //      threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
+      //      capacity: this.capacity,
+      //      lastUpdateTick: this.lastUpdateTick
+      //  });
     } else if (this.currentStock <= 0) {
         // Handle case where initial stock is <= 0 but somehow above threshold (unlikely with threshold > 0)
         console.warn("Lake initialized with zero or negative stock. Collapsing immediately.");
         this._isCollapsed = true;
         this.currentStock = 0;
-        logEvent({
-           type: "lake_collapse",
-           reason: "Initial stock zero or negative",
-           initialStock: initialStock,
-           capacity: this.capacity,
-           lastUpdateTick: this.lastUpdateTick
-       });
+      //   logEvent({
+      //      type: "lake_collapse",
+      //      reason: "Initial stock zero or negative",
+      //      initialStock: initialStock,
+      //      capacity: this.capacity,
+      //      lastUpdateTick: this.lastUpdateTick
+      //  });
     }
   }
 
@@ -64,7 +64,7 @@ export class Lake extends EventEmitter {
    * @param world - Optional world instance to update UI.
    * Emits 'lakeUpdated' event if world is provided.
    */
-  regenerate(currentTick: number, world?: any): void {
+  regenerate(currentTick: number, world?: GameWorld): void {
     // Do not regenerate if the lake is permanently collapsed
     if (this.isCollapsed()) {
         return;
@@ -87,14 +87,14 @@ export class Lake extends EventEmitter {
 
     // Log the regeneration event if stock changed
     if (stockAfter !== stockBefore) {
-        logEvent({
-            type: "lake_regenerate",
-            stockBefore: stockBefore,
-            stockAfter: stockAfter,
-            capacity: this.capacity,
-            isCollapsed: this._isCollapsed, // Should always be false here
-            lastUpdateTick: this.lastUpdateTick
-        });
+        // logEvent({
+        //     type: "lake_regenerate",
+        //     stockBefore: stockBefore,
+        //     stockAfter: stockAfter,
+        //     capacity: this.capacity,
+        //     isCollapsed: this._isCollapsed, // Should always be false here
+        //     lastUpdateTick: this.lastUpdateTick
+        // });
     }
 
     if (world) {
@@ -117,14 +117,14 @@ export class Lake extends EventEmitter {
           this.lastUpdateTick = currentTick;
 
           // Log collapse event
-          logEvent({
-              type: "lake_collapse",
-              reason: "Stock dropped below threshold after harvest",
-              threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
-              stockAtCollapseTrigger: this.currentStock, // Will be 0 now
-              capacity: this.capacity,
-              lastUpdateTick: this.lastUpdateTick
-          });
+          // logEvent({
+          //     type: "lake_collapse",
+          //     reason: "Stock dropped below threshold after harvest",
+          //     threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
+          //     stockAtCollapseTrigger: this.currentStock, // Will be 0 now
+          //     capacity: this.capacity,
+          //     lastUpdateTick: this.lastUpdateTick
+          // });
           this.emit(EVENT_COLLAPSE); // Emit collapse event
       }
   }
@@ -137,7 +137,7 @@ export class Lake extends EventEmitter {
    * @returns The actual amount of fish successfully harvested.
    * Emits 'lakeUpdated' event if world is provided.
    */
-  harvest(amount: number, currentTick: number, world?: any): number {
+  harvest(amount: number, currentTick: number, world?: GameWorld): number {
     if (amount <= 0) {
       return 0; // Cannot harvest zero or negative fish
     }
@@ -157,13 +157,13 @@ export class Lake extends EventEmitter {
     
     if (harvestedAmount > 0) {
       this.lastUpdateTick = currentTick;
-      logEvent({
-          type: "lake_harvest",
-          requestedAmount: amount,
-          harvestedAmount: harvestedAmount,
-          stockRemaining: this.currentStock,
-          lastUpdateTick: this.lastUpdateTick
-      });
+      // logEvent({
+      //     type: "lake_harvest",
+      //     requestedAmount: amount,
+      //     harvestedAmount: harvestedAmount,
+      //     stockRemaining: this.currentStock,
+      //     lastUpdateTick: this.lastUpdateTick
+      // });
     }
 
     if (world) {

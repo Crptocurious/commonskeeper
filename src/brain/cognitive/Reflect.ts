@@ -1,11 +1,11 @@
 import type { BaseAgent } from '../../BaseAgent';
 import { BaseLLM } from '../BaseLLM';
-import { StateCollector, type CompleteState } from './State';
+import type { CompleteState } from '../../BaseAgent';
 
 // Interface for the complete reflection state
 interface ReflectionState {
     agentName: string;
-    sections: ReturnType<typeof StateCollector.formatAsSections>;
+    state: CompleteState;
 }
 
 export class Reflect {
@@ -24,15 +24,13 @@ Your decisions affect both your survival (through energy management) and the lak
 
 Your current state and observations:
 
-`;
+=== Agent State ===
+${JSON.stringify(state.state.agent, null, 2)}
 
-        // Add each state section with its content
-        state.sections.forEach(section => {
-            prompt += `=== ${section.title} ===\n`;
-            prompt += `${JSON.stringify(section.content, null, 2)}\n\n`;
-        });
+=== Game State ===
+${JSON.stringify(state.state.game, null, 2)}
 
-        prompt += `Based on this information, analyze the current situation and provide strategic insights.
+Based on this information, analyze the current situation and provide strategic insights.
 Consider:
 - Resource management (both personal energy and lake sustainability)
 - Social dynamics and cooperation opportunities
@@ -45,16 +43,13 @@ Provide a concise analysis that can inform your next actions.`;
     }
 
     public async reflect(agent: BaseAgent): Promise<string | undefined> {
-        // Collect all state information using the shared StateCollector
-        const completeState = StateCollector.collectCompleteState(agent);
+        // Get complete state directly from agent
+        const completeState = agent.getCompleteState();
         
-        // Format the state into sections
-        const sections = StateCollector.formatAsSections(completeState);
-
         // Create reflection state
         const reflectionState: ReflectionState = {
             agentName: agent.name,
-            sections
+            state: completeState
         };
 
         // Build the reflection prompt

@@ -1,3 +1,23 @@
+import { World } from "hytopia";
+import { Lake } from "../Lake";
+
+export type GamePhase = 'HARVEST' | 'TOWNHALL';
+
+export interface PhaseChangeEvent {
+    phase: GamePhase;
+    currentTick: number;
+}
+
+export interface GameWorld extends World {
+    currentTick: number;
+    currentPhase: GamePhase;
+    lake: Lake;
+}
+
+export interface GameContext {
+    lake: Lake;
+}
+
 export interface LakeState {
     currentStock: number;
     maxCapacity: number;
@@ -8,21 +28,14 @@ export interface LakeState {
 }
 
 export interface PhaseState {
-    currentPhase: 'HARVEST' | 'TOWNHALL';
-    lastPhase: 'HARVEST' | 'TOWNHALL' | null;
+    currentPhase: GamePhase;
+    lastPhase: GamePhase | null;
     phaseStartTick: number;
-}
-
-export interface CycleState {
-    currentCycle: number;
-    lastCycle: number;
-    cycleStartTick: number;
 }
 
 export interface GameState {
     lake: LakeState;
     phase: PhaseState;
-    cycle: CycleState;
     lastUpdateTick: number;
 }
 
@@ -30,4 +43,4 @@ export interface GameState {
 export interface GameStateHistory {
     states: GameState[];
     maxHistoryLength: number;
-} 
+}
