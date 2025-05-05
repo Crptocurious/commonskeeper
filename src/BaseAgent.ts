@@ -56,6 +56,7 @@ export class BaseAgent extends Entity {
 		regenRate: 0,
 		collapseThreshold: 0
 	};
+	public plannedHarvestAmount: number | null = null;
 	
 	private lastActionTick: number = 0;
 	public lastReflectionTick: number = 0;
@@ -96,9 +97,16 @@ export class BaseAgent extends Entity {
 			this.currentAgentTick = this.currentWorld.currentTick;
 			
 			// Update phase and track last phase
+			const previousPhase = this.currentAgentPhase;
 			if (this.currentWorld.currentPhase !== this.currentAgentPhase) {
 				this.lastAgentPhase = this.currentAgentPhase;
 				this.currentAgentPhase = this.currentWorld.currentPhase;
+
+				// Trigger planning logic when entering the PLANNING phase
+				if (this.currentAgentPhase === 'PLANNING') {
+					this.handleEnvironmentTrigger("The PLANNING phase has begun. Review the situation and decide your harvest plan.");
+					this.lastActionTick = this.currentAgentTick; // Reset action timer after planning trigger
+				}
 			}
 
 			// Update lake state if available
@@ -106,13 +114,14 @@ export class BaseAgent extends Entity {
 				this.currentLakeState = this.currentWorld.lake.getState();
 			}
 
-			const ticksSinceLastAction = this.currentAgentTick - this.lastActionTick;
-			if (ticksSinceLastAction >= this.INACTIVITY_THRESHOLD_TICKS) {
-				this.handleEnvironmentTrigger(
-					"You have been inactive for a while. What would you like to do?"
-				);
-				this.lastActionTick = this.currentAgentTick; // Reset timer
-			}
+			// --- Inactivity Check (Commented out for now) ---
+			// const ticksSinceLastAction = this.currentAgentTick - this.lastActionTick;
+			// if (ticksSinceLastAction >= this.INACTIVITY_THRESHOLD_TICKS) {
+			// 	this.handleEnvironmentTrigger(
+			// 		"You have been inactive for a while. What would you like to do?"
+			// 	);
+			// 	this.lastActionTick = this.currentAgentTick; // Reset timer
+			// }
 
 			// Execute all behavior updates
 			this.behaviors.forEach(behavior => {
@@ -207,15 +216,21 @@ export class BaseAgent extends Entity {
 					this.setChatUIState({ message: "" });
 				}, 5300);
 
-				// Broadcast to nearby agents
-				this.broadcastToNearbyAgents(message, this, toolName === "speak" ? "SPEAK" : "TOWNHALL");
-
-				// Record metric for successful townhall message
-				if (toolName === "townhall_speak" && this.currentAgentPhase === 'DISCUSSION') {
-					gameWorld.metricsTracker.recordTownhallMessage();
+				// Broadcast based on phase
+				if (toolName === "townhall_speak") {
+					if (this.currentAgentPhase === 'DISCUSSION') {
+						this.broadcastToNearbyAgents(message, this, "TOWNHALL");
+						// Record metric only if broadcast was successful during the correct phase
+						gameWorld.metricsTracker.recordTownhallMessage();
+						results.push(`${toolName}: ${message}`);
+					} else {
+						// Inform agent they can't speak now
+						results.push(`${toolName}: Failed. You can only use townhall_speak during the DISCUSSION phase.`);
+					}
+				} else { // toolName === "speak"
+					this.broadcastToNearbyAgents(message, this, "SPEAK");
+					results.push(`${toolName}: ${message}`);
 				}
-
-				results.push(`${toolName}: ${message}`);
 			}
 		}
 
