@@ -17,24 +17,67 @@ import { BaseAgent } from "./src/BaseAgent";
 import { UIService } from "./src/services/UIService";
 import { PlayerHandlers } from "./src/handlers/PlayerHandler";
 import type { GameWorld } from "./src/types/GameState";
+import { MetricsTracker } from "./src/MetricsTracker";
+import { EVENT_COLLAPSE } from "./src/Lake";
 
 // Define the agent configurations
+
+// --- Simulation Duration --- TODO: Make this configurable
+const CYCLES_TO_RUN = 10;
+const TOTAL_SIMULATION_TICKS = DERIVED_TIME_CONFIG.totalCycleTicks * CYCLES_TO_RUN;
 
 startServer((world: World) => {
     const gameWorld = world as GameWorld;
     gameWorld.currentTick = 0;
     gameWorld.currentPhase = 'TOWNHALL';
+    gameWorld.agents = []; // Initialize agents array on gameWorld
+    let totalElapsedTicks = 0; // Track total ticks for simulation end
+
+    // --- Initialize Lake ---
+    const lake = new Lake(
+        SIMULATION_CONFIG.LAKE_CAPACITY,
+        SIMULATION_CONFIG.LAKE_INITIAL_STOCK,
+        1, // Assuming regenRate parameter is not used by doubling logic anymore
+        gameWorld.currentTick
+    );
+    gameWorld.lake = lake; // Assign lake to gameWorld
+
+    // --- Initialize Metrics Tracker ---
+    const metricsTracker = new MetricsTracker("sim", TOTAL_SIMULATION_TICKS);
+    metricsTracker.simulationStarted(gameWorld.currentTick, lake.getCurrentStock());
+    gameWorld.metricsTracker = metricsTracker; // Assign to gameWorld
+
+    // --- Setup Lake Collapse Listener ---
+    lake.on(EVENT_COLLAPSE, () => {
+        console.log("EVENT LISTENER: Lake collapse detected!");
+        metricsTracker.lakeCollapsed(totalElapsedTicks, lake.getCurrentStock());
+        // Optionally stop the simulation on collapse
+        // clearInterval(simulationInterval);
+        // metricsTracker.simulationEnded(totalElapsedTicks, lake); 
+    });
 
     // Set up the global tick interval
-	setInterval(() => {
+	const simulationInterval = setInterval(() => {
+        // Check for simulation end condition (time limit or collapse)
+        if (totalElapsedTicks >= TOTAL_SIMULATION_TICKS || lake.isCollapsed()) {
+            clearInterval(simulationInterval);
+            if (!metricsTracker.isReportGenerated()) { // Ensure report is generated only once
+                 metricsTracker.simulationEnded(totalElapsedTicks, lake);
+            }
+            console.log(`Simulation ended. Reason: ${lake.isCollapsed() ? 'Lake Collapsed' : 'Time Limit Reached'} at tick ${totalElapsedTicks}`);
+            return; // Stop further processing
+        }
+
+        // Increment ticks
+        totalElapsedTicks++;
         gameWorld.currentTick++;
 
-        // Calculate which phase we should be in based on current tick
+        // Calculate which phase we should be in based on current tick within the cycle
         const totalCycleTicks = DERIVED_TIME_CONFIG.totalCycleTicks;
         
-        // Reset tick counter when it reaches the total cycle length
         if (gameWorld.currentTick >= totalCycleTicks) {
-            gameWorld.currentTick = 0;
+            metricsTracker.cycleEnded(totalElapsedTicks); // Log end of cycle metrics *before* resetting tick
+            gameWorld.currentTick = 0; // Reset tick counter for the new cycle
         }
         
         const ticksInCurrentCycle = gameWorld.currentTick;
@@ -44,19 +87,28 @@ startServer((world: World) => {
         
         // If phase changed, update UI and handle phase transition
         if (newPhase !== gameWorld.currentPhase) {
+            const oldPhase = gameWorld.currentPhase;
             gameWorld.currentPhase = newPhase;
             UIService.sendPhaseUpdate(gameWorld);
+
+            // Record fish stock at the end of each phase
+            metricsTracker.recordFishStock(totalElapsedTicks, lake.getCurrentStock());
             
-            // If transitioning to HARVEST, the lake stock doubles (regeneration)
+            // If transitioning TO HARVEST (meaning Townhall just ended), lake regenerates
             if (newPhase === 'HARVEST') {
-                lake.regenerate(0); // Force immediate regeneration
-                UIService.sendLakeStatusUpdate(gameWorld, lake);
+                const regeneratedAmount = lake.regenerate(totalElapsedTicks, gameWorld); 
+                metricsTracker.recordLakeRegeneration(regeneratedAmount);
+                UIService.sendLakeStatusUpdate(gameWorld, lake); // Update UI after regeneration
+                console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Phase Change: TOWNHALL -> HARVEST. Lake regenerated: ${regeneratedAmount.toFixed(2)} ---`);
+            }
+            if (newPhase === 'TOWNHALL') {
+                 console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Phase Change: HARVEST -> TOWNHALL ---`);
             }
         }
-	}, 1000 / TIME_CONFIG.TICKS_PER_SECOND); // Use the configured TPS from constants
+	}, 1000 / TIME_CONFIG.TICKS_PER_SECOND);
     
+    // Assign agents to gameWorld.agents
     const agents: BaseAgent[] = [];
-    const lake = new Lake(SIMULATION_CONFIG.LAKE_CAPACITY, SIMULATION_CONFIG.LAKE_INITIAL_STOCK, 1, 0);
 
     const gameContext = { lake }; // Used to provide context needed by the agents behavior
     
@@ -78,6 +130,7 @@ startServer((world: World) => {
         agent.spawn(gameWorld, config.spawnLocation);
         agents.push(agent);
     });
+    gameWorld.agents = agents; // Make agents accessible on gameWorld
 
     // Listen for lake updates and update UI
     lake.on('lakeUpdated', (gameWorld, lake) => {
@@ -87,6 +140,7 @@ startServer((world: World) => {
     // Handle player events
     gameWorld.on(PlayerEvent.JOINED_WORLD, (event) => {
         if (event.player) {
+            // Pass metricsTracker to handlers if needed, or handle metrics calls directly in behaviors
             PlayerHandlers.handlePlayerJoin(gameWorld, event.player, agents, lake);
             
             UIService.sendPhaseUpdate(gameWorld); // Send initial phase update
@@ -107,11 +161,5 @@ startServer((world: World) => {
         if (event.player) {
             PlayerHandlers.handlePlayerLeave(gameWorld, event.player);
         }
-    });
-
-    // Add tick handler for lake regeneration
-    gameWorld.on(EntityEvent.TICK, (payload: any) => {
-        const { deltaTimeMs } = payload as { deltaTimeMs: number };
-        lake.regenerate(deltaTimeMs);
     });
 });

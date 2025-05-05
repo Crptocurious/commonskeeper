@@ -192,6 +192,9 @@ export class BaseAgent extends Entity {
 		console.log(`Agent ${this.name} handling tool call:`, toolName, args);
 		this.lastActionTick = this.currentAgentTick;
 
+		// Ensure world is treated as GameWorld to access metricsTracker
+		const gameWorld = this.world as GameWorld;
+
 		// Handle communication actions first
 		if (toolName === "speak" || toolName === "townhall_speak") {
 			const message = args.message;
@@ -206,6 +209,11 @@ export class BaseAgent extends Entity {
 
 				// Broadcast to nearby agents
 				this.broadcastToNearbyAgents(message, this, toolName === "speak" ? "SPEAK" : "TOWNHALL");
+
+				// Record metric for successful townhall message
+				if (toolName === "townhall_speak" && this.currentAgentPhase === 'TOWNHALL') {
+					gameWorld.metricsTracker.recordTownhallMessage();
+				}
 
 				results.push(`${toolName}: ${message}`);
 			}

@@ -101,6 +101,9 @@ export class FishingBehavior implements AgentBehavior {
 					return;
 				}
 
+				// Record the successful harvest for metrics
+				world.metricsTracker.recordAgentHarvest(agent.name, result.harvestedAmount);
+
 				agent.addToInventory({
 					name: "fish",
 					quantity: result.harvestedAmount,

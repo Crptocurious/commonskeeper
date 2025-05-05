@@ -1,5 +1,7 @@
 import { World } from "hytopia";
 import { Lake } from "../Lake";
+import { BaseAgent } from "../BaseAgent";
+import { MetricsTracker } from "../MetricsTracker";
 
 export type GamePhase = 'HARVEST' | 'TOWNHALL';
 
@@ -12,6 +14,8 @@ export interface GameWorld extends World {
     currentTick: number;
     currentPhase: GamePhase;
     lake: Lake;
+    agents: BaseAgent[];
+    metricsTracker: MetricsTracker;
 }
 
 export interface GameContext {
