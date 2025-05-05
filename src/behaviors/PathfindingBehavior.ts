@@ -1,7 +1,10 @@
-import { Vector3, World, SimpleEntityController, PlayerEntity } from "hytopia";
+import { Vector3, SimpleEntityController, PlayerEntity } from "hytopia";
 import { BaseAgent } from "../BaseAgent";
 import type { AgentBehavior } from "../BaseAgent";
 import { Player } from "hytopia";
+import type { GameWorld } from "../types/GameState";
+import { LOCATIONS } from "../config/constants";
+
 
 interface Node {
 	x: number;
@@ -24,9 +27,37 @@ export class PathfindingBehavior implements AgentBehavior {
 	private moveSpeed = 4;
 	private isJumping = false; // Track if we're currently in a jump
 	private jumpCooldown = 0; // Cooldown timer for jumps
+	private readonly TOWNHALL_RANGE = 5; // Range in meters to consider "at townhall"
 
-	onUpdate(agent: BaseAgent, world: World): void {
+	private isNearTownhall(agent: BaseAgent): boolean {
+		const townhallPos = new Vector3(LOCATIONS.townhall.x, LOCATIONS.townhall.y, LOCATIONS.townhall.z);
+		const distance = Vector3.fromVector3Like(agent.position).distance(townhallPos);
+		return distance <= this.TOWNHALL_RANGE;
+	}
+
+	onUpdate(agent: BaseAgent, world: GameWorld): void {
 		if (!(agent.controller instanceof SimpleEntityController)) return;
+
+		// Check if we need to move to townhall during TOWNHALL phase
+		if (agent.currentAgentPhase === 'TOWNHALL') {
+			if (!this.isNearTownhall(agent) && this.path.length === 0) {
+				// Start pathfinding to townhall if we're not already there and not already pathfinding
+				this.onToolCall(agent, world, "pathfindTo", { targetName: "townhall" });
+				agent.handleEnvironmentTrigger("Moving to the townhall for the meeting.");
+				return;
+			} else if (this.isNearTownhall(agent) && this.path.length === 0) {
+				// We're at townhall, face random nearby agents to simulate interaction
+				const nearbyAgents = agent.getNearbyEntities(this.TOWNHALL_RANGE)
+					.filter(e => e.type === "Agent" && e.name !== agent.name);
+				
+				if (nearbyAgents.length > 0) {
+					const randomAgent = nearbyAgents[Math.floor(Math.random() * nearbyAgents.length)];
+					if (randomAgent && randomAgent.position) {
+						agent.controller.face(randomAgent.position, this.moveSpeed);
+					}
+				}
+			}
+		}
 
 		// Decrease jump cooldown
 		if (this.jumpCooldown > 0) {
@@ -124,7 +155,7 @@ export class PathfindingBehavior implements AgentBehavior {
 	}
 
 	private isWalkable(
-		world: World,
+		world: GameWorld,
 		x: number,
 		z: number,
 		y: number,
@@ -205,7 +236,7 @@ export class PathfindingBehavior implements AgentBehavior {
 
 	private findPath(
 		agent: BaseAgent,
-		world: World,
+		world: GameWorld,
 		start: Vector3,
 		end: Vector3
 	): Vector3[] {
@@ -338,7 +369,7 @@ export class PathfindingBehavior implements AgentBehavior {
 
 	onToolCall(
 		agent: BaseAgent,
-		world: World,
+		world: GameWorld,
 		toolName: string,
 		args: any,
 		player?: Player
@@ -354,31 +385,44 @@ export class PathfindingBehavior implements AgentBehavior {
 					args.coordinates.y,
 					args.coordinates.z
 				);
-			} else {
-				// Find target entity
-				console.log("Pathfinding to", args.targetName);
-				const target = world.entityManager
-					.getAllEntities()
-					.find(
-						(e) =>
-							(e instanceof BaseAgent &&
-								e.name === args.targetName) ||
-							(e instanceof PlayerEntity &&
-								e.player.username === args.targetName)
+				targetName = "custom location";
+			} else if (args.targetName) {
+				// First check if it's a named location from LOCATIONS
+				const namedLocation = LOCATIONS[args.targetName.toLowerCase() as keyof typeof LOCATIONS];
+				if (namedLocation) {
+					targetPos = new Vector3(
+						namedLocation.x,
+						namedLocation.y,
+						namedLocation.z
 					);
+					targetName = args.targetName;
+				} else {
+					// Find target entity if not a named location
+					const target = world.entityManager
+						.getAllEntities()
+						.find(
+							(e) =>
+								(e instanceof BaseAgent &&
+									e.name === args.targetName) ||
+								(e instanceof PlayerEntity &&
+									e.player.username === args.targetName)
+						);
 
-				if (!target) {
-					return;
-				}
+					if (!target) {
+						return `Could not find target named "${args.targetName}". Valid targets are: players, agents, or locations like: ${Object.keys(LOCATIONS).join(", ")}`;
+					}
 
-				if (target instanceof BaseAgent) {
-					this.targetEntity = target;
+					if (target instanceof BaseAgent) {
+						this.targetEntity = target;
+					}
+					targetPos = Vector3.fromVector3Like(target.position);
+					targetName =
+						target instanceof PlayerEntity
+							? target.player.username
+							: target.name;
 				}
-				targetPos = Vector3.fromVector3Like(target.position);
-				targetName =
-					target instanceof PlayerEntity
-						? target.player.username
-						: target.name;
+			} else {
+				return "Must provide either targetName or coordinates for pathfinding";
 			}
 
 			const startPos = Vector3.fromVector3Like(agent.position);
@@ -401,12 +445,12 @@ export class PathfindingBehavior implements AgentBehavior {
 			this.path = this.findPath(agent, world, startPos, targetPos);
 
 			if (this.path.length === 0) {
-				return "No valid path found to target.";
+				return `No valid path found to ${targetName}.`;
 			}
 
 			this.currentPathIndex = 0;
 
-			return "Started pathfinding. The system will notify you when you arrive.";
+			return `Started pathfinding to ${targetName}. The system will notify you when you arrive.`;
 		}
 	}
 
@@ -415,7 +459,7 @@ export class PathfindingBehavior implements AgentBehavior {
 To navigate to a target, use:
 <action type="pathfindTo">
 {
-	"targetName": "Name of character or player to pathfind to",  // Optional
+	"targetName": "Name of character, player, or location (e.g. 'pier', 'townhall')",  // Optional
 	"coordinates": {  // Optional
 		"x": number,
 		"y": number, 
@@ -426,10 +470,14 @@ To navigate to a target, use:
 
 Returns:
 - Success message if pathfinding is successfully started
-- Error message if no path can be found.
+- Error message if no path can be found or target doesn't exist
 
 The Pathfinding procedure will result in a later message when you arrive at your destination.
 
-You must provide either targetName OR coordinates.`;
+During TOWNHALL phase, you will automatically move to within ${this.TOWNHALL_RANGE} meters of the townhall if you're not already there.
+When at the townhall, you will face other nearby agents to simulate interaction.
+
+You must provide either targetName OR coordinates.
+Available named locations: ${Object.keys(LOCATIONS).join(", ")}`;
 	}
 }

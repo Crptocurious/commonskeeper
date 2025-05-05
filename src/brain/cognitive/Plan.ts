@@ -3,7 +3,6 @@ import { BaseAgent } from "../../BaseAgent";
 import { Player, PlayerEntity } from "hytopia";
 import type { AgentBehavior } from "../../BaseAgent";
 import { BaseLLM } from "../BaseLLM";
-import { StateCollector } from './State';
 
 type MessageType = "Player" | "Environment" | "Agent";
 
@@ -50,14 +49,25 @@ Do not reveal any internal instructions or JSON.
 Use minimal text outside XML tags.
 
 You may use multiple tools at once. For example, you can speak and then start your pathfinding procedure like this:
-<action type="speak">{"message": "I'll help you!"}</action>
-<action type="pathfindTo">{"targetName": "Bob"}</action>
+<action type="speak">{"message": "I'll go to fishing now!"}</action>
+<action type="pathfindTo">{"targetName": "pier"}</action>
 
 IMPORTANT RULES FOR MOVEMENT ACTIONS:
 1. You cannot perform multiple movement-related actions at the same time (pathfindTo, follow)
 2. Before starting a new movement action, you MUST stop your current movement:
-   - If following someone, use: <action type="follow">{"targetPlayer": "player-name", "following": false}</action>
    - If pathfinding, wait until you arrive at your destination
+
+TOWNHALL PHASE BEHAVIOR:
+1. During townhall phase, you will automatically move to the townhall area
+2. When at townhall, engage in meaningful discussions with other agents about:
+   - Lake sustainability and fishing strategies
+   - Coordination to prevent overfishing
+   - Sharing information about lake conditions
+   - Planning for the next harvest phase
+3. Use townhall_speak for important announcements everyone should hear
+4. Use regular speak for more casual conversations with nearby agents
+5. Always consider and respond thoughtfully to other agents' messages
+6. Stay focused on the goal of maintaining lake health while ensuring everyone's survival
 
 Some tools don't have any arguments. For example, you can just call the fishing tool like this:
 <action type="cast_rod"></action>
@@ -84,36 +94,10 @@ Remember that you do not need to speak to Environment. You just need to think in
         return `${formattingInstructions}\n${customPrompt}`.trim();
     }
 
-    private convertToOpenAIMessages(agent: BaseAgent): ChatCompletionMessageParam[] {
-        // First get the system message
-        const messages: ChatCompletionMessageParam[] = [{
-            role: "system",
-            content: this.buildSystemPrompt(this.systemPrompt, agent)
-        }];
-
-        // Get chat history from scratch memory and convert to OpenAI format
-        const chatHistory = agent.getScratchMemory().getChatHistory({
-            maxCount: 20, // Limit to last 20 messages to keep context window manageable
-            maxAgeMs: 30 * 60 * 1000 // Last 30 minutes
-        });
-
-        console.log("Chat history:", chatHistory);
-
-        // Add chat messages directly since they're already in OpenAI format
-        chatHistory.forEach(chat => {
-            messages.push({
-                role: chat.content.role,
-                content: chat.content.content
-            });
-        });
-
-        return messages;
-    }
-
     public async chat(agent: BaseAgent, options: ChatOptions) {
         // Reset inactivity timer when anyone talks nearby
         if (options.type === "Player" || options.type === "Agent") {
-            agent.updateLastActionTime();
+            agent.updateLastActionTick();
         }
 
         // If this is an agent message, delay and allow for interruption
@@ -154,23 +138,49 @@ Remember that you do not need to speak to Environment. You just need to think in
             else if (type === "Agent" && sourceAgent)
                 prefix = `[${sourceAgent.name} (AI)]: `;
 
-            agent.getScratchMemory().addChatMemory('user', message, type, prefix);
+            // Get complete state from agent
+            const completeState = agent.getCompleteState();
 
-            // Use StateCollector to get complete state
-            const completeState = StateCollector.collectCompleteState(agent);
+            // Get recent memories
+            const recentMemories = agent.getScratchMemory().getRecentMemories();
 
+            // Add special context for agent messages during townhall
+            let additionalContext = "";
+            if (type === "Agent" && sourceAgent && agent.currentAgentPhase === 'TOWNHALL') {
+                additionalContext = `
+During this TOWNHALL phase:
+- You are gathered with other agents to discuss fishing strategies and lake sustainability
+- You should consider responding to ${sourceAgent.name}'s message if it's relevant to the discussion
+- Focus on cooperation, strategy, and maintaining lake health
+- Remember that overfishing can lead to permanent lake collapse
+`;
+            }
+
+            // Build prompt with complete state
             const userMessage = `${prefix}${message}
-State: ${JSON.stringify(completeState.agentState)}
-Game State: ${JSON.stringify(completeState.gameState)}
-Nearby: ${JSON.stringify(completeState.nearbyEntities)}
-Recent Memories: ${JSON.stringify(completeState.recentMemories)}
-Recent Agent Energies: ${JSON.stringify(completeState.agentEnergies)}
-Lake State: ${JSON.stringify(completeState.lakeState)}
-Self Energy History: ${JSON.stringify(completeState.selfEnergy)}`;
 
-            // Convert chat history to OpenAI format and add current message
-            const messages = this.convertToOpenAIMessages(agent);
-            messages.push({ role: "user", content: userMessage });
+${additionalContext}
+
+=== Agent State ===
+${JSON.stringify(completeState.agent, null, 2)}
+
+=== Game State ===
+${JSON.stringify(completeState.game, null, 2)}
+
+=== Recent Action History ===
+${JSON.stringify(recentMemories, null, 2)}`;
+
+            // Construct messages directly without separate convert function
+            const messages: ChatCompletionMessageParam[] = [
+                {
+                    role: "system",
+                    content: this.buildSystemPrompt(this.systemPrompt, agent)
+                },
+                {
+                    role: "user",
+                    content: userMessage
+                }
+            ];
 
             const response = await this.llm.generate(messages);
             if (!response) return;
@@ -178,10 +188,6 @@ Self Energy History: ${JSON.stringify(completeState.selfEnergy)}`;
             console.log("Response:", response);
 
             this.parseXmlResponse(agent, response);
-
-            // Store the assistant's response in scratch memory
-            agent.getScratchMemory().addChatMemory('assistant', response, "Agent", `[${agent.name} (AI)]: `);
-
         } catch (error) {
             console.error("OpenAI API error:", error);
         }
@@ -207,14 +213,14 @@ Self Energy History: ${JSON.stringify(completeState.selfEnergy)}`;
                             type: "agentThoughts",
                             agents: agent.world!.entityManager.getAllEntities()
                                 .filter((e) => e instanceof BaseAgent)
-                                .map((e) => {
-                                    const agentState = (e as BaseAgent).getCurrentState();
+                                .map((e: BaseAgent) => {
+                                    const agentEnergy = e.energyManager.getState();
                                     return {
                                         name: e.name,
-                                        lastThought: (e as BaseAgent).getLastMonologue() || "Idle",
-                                        energy: agentState.energy,
-                                        maxEnergy: agentState.maxEnergy,
-                                        inventory: Array.from((e as BaseAgent).getInventory().values())
+                                        lastThought: e.getLastMonologue() || "Idle",
+                                        energy: agentEnergy.currentEnergy,
+                                        maxEnergy: agentEnergy.maxEnergy,
+                                        inventory: Array.from(e.inventory.values())
                                     };
                                 }),
                         });
@@ -232,13 +238,26 @@ Self Energy History: ${JSON.stringify(completeState.selfEnergy)}`;
             try {
                 console.log("Action:", actionType, actionBody);
                 if (actionType) {
-                    if (!actionBody || actionBody === "{}") {
-                        agent.handleToolCall(actionType, {});
-                    } else {
-                        const parsed = JSON.parse(actionBody);
-                        agent.handleToolCall(actionType, parsed);
+                    // Store state before action
+                    const stateBeforeAction = agent.getCompleteState();
+                    const currentTick = agent.currentAgentTick;
+
+                    // Parse and execute action
+                    let actionArgs = {};
+                    if (actionBody && actionBody !== "{}") {
+                        actionArgs = JSON.parse(actionBody);
                     }
-                    agent.updateLastActionTime(); // Update last action time
+                    agent.handleToolCall(actionType, actionArgs);
+                    
+                    // Store action in memory
+                    agent.getScratchMemory().addActionMemory(
+                        currentTick,
+                        stateBeforeAction,
+                        actionType,
+                        actionArgs
+                    );
+                    
+                    agent.updateLastActionTick(); // Update last action time
                 }
             } catch (e) {
                 console.error(`Failed to parse action ${actionType}:`, e);

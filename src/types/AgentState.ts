@@ -1,3 +1,20 @@
+import type { Lake } from "../Lake";
+import type { GameContext, GamePhase } from "./GameState";
+import { Vector3 } from "hytopia";
+import type { CompleteState } from "../BaseAgent";
+
+export interface AgentConfig {
+    name: string;
+    systemPrompt: string;
+    behaviorConfigs: BehaviorConfig[];
+    spawnLocation: Vector3;
+}
+
+export interface BehaviorConfig {
+    type: new (...args: any[]) => any;
+    args?: (keyof GameContext)[];
+}
+
 export interface EnergyState {
     currentEnergy: number;
     maxEnergy: number;
@@ -11,15 +28,9 @@ export interface InventoryItem {
     metadata?: Record<string, any>; // For things like fish weight, mineral value, etc.
 }
 
-export interface InventoryState {
-    items: Map<string, InventoryItem>;
-    capacity?: number; // Optional inventory capacity limit
-}
-
 export interface BehaviorState {
     name: string;
-    state: Record<string, any>; // Dynamic state specific to each behavior
-    isActive: boolean;
+    state: string;
 }
 
 export interface CommunicationEntry {
@@ -41,22 +52,53 @@ export interface MemoryState {
     timestamp: number;
 }
 
+export interface NearbyEntity {
+    name: string;
+    type: string;
+    distance: number;
+    position: Vector3;
+}
+
 export interface AgentState {
     name: string;
-    energy: EnergyState;
-    inventory: InventoryState;
-    behaviors: BehaviorState[];
-    communication: CommunicationHistory;
-    memories: MemoryState[];
     position?: { x: number; y: number; z: number };
-    currentPhase: 'HARVEST' | 'TOWNHALL';
+    energy: EnergyState;
+    inventory: InventoryItem[];
+    behaviors: BehaviorState[];
+    // communication: CommunicationHistory;
+    // memories: MemoryState[];
     lastActionTick: number;
     lastReflectionTick: number;
     isDead: boolean;
+    internalMonologue: string[];
+    nearbyEntities: NearbyEntity[];
+    // scratchMemory: {
+    //     getRecentMemories(count?: number): ActionHistoryEntry[];
+    // }
 }
 
 // For storing historical agent states
 export interface AgentStateHistory {
     states: AgentState[];
+    maxHistoryLength: number;
+} 
+
+export interface AgentUpdateContext {
+    currentTick: number;
+    currentPhase: GamePhase;
+    lake: Lake;
+} 
+
+export interface ActionHistoryEntry {
+    tick: number;
+    stateBeforeAction: CompleteState;
+    action: {
+        type: string;
+        args: any;
+    };
+}
+
+export interface ActionHistory {
+    entries: ActionHistoryEntry[];
     maxHistoryLength: number;
 } 

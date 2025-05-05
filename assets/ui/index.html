@@ -136,8 +136,10 @@
 .thought-entry {
     margin-bottom: 15px;
     padding: 10px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .thought-agent-name {
@@ -227,37 +229,51 @@
 /* --- Added/Modified Header Styles --- */
 .agent-header-info {
     display: flex;
-    align-items: center; /* Vertically align items */
-    margin-bottom: 8px; /* Space below header */
-    flex-wrap: wrap; /* Allow wrapping if needed on small screens */
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .agent-name {
     font-weight: bold;
-    margin-right: 10px; /* Increased Space after name */
-    color: #e0e0e0; /* Lighter color for name */
+    color: #e0e0e0;
+    background: #4a5568;
+    padding: 4px 12px;
+    border-radius: 12px;
 }
 
-.icon { /* Common icon styles */
-    width: 16px;
-    height: 16px;
-    /* flexbox alignment takes care of vertical */
+.icon {
+    vertical-align: middle;
+    margin: 0 2px;
 }
 
 .energy-icon {
-    margin-right: 2px; /* Small space before energy text */
+    width: 16px;
+    height: 16px;
 }
 
 .fish-icon {
-    margin-left: 8px; /* Space between energy and fish icon */
-    margin-right: 2px; /* Small space before fish count */
+    width: 20px;
+    height: 20px;
 }
 
 .agent-energy,
 .agent-inventory {
     font-size: 0.9em;
-    color: #aaa;
-    /* margin-right removed, spacing controlled by fish-icon margin-left */
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.thought-entry {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Remove E: and parentheses text, handled by alt text and structure */
@@ -316,15 +332,28 @@ hytopia.registerSceneUITemplate('agent-chat', (id, onState) => {
 
 // Handle received data from server
 hytopia.onData((data) => {
+    console.log('Received data:', data); // Debug log
     
     if (data.type === 'lakeUpdate') {
+        console.log('Processing lake update:', data);
         const lakeStatusEl = document.getElementById('lake-status');
         if (lakeStatusEl) {
             lakeStatusEl.textContent = `Stock: ${data.stock} / ${data.capacity}`;
         }
     }
-
-    // --- Agent Thoughts Update ---
+    else if (data.type === 'agentEnergyUpdate') {
+        // Find the agent's energy display and update it
+        const agentEntries = document.querySelectorAll('.thought-entry');
+        agentEntries.forEach(entry => {
+            const nameEl = entry.querySelector('.agent-name');
+            if (nameEl && nameEl.textContent === data.agentName) {
+                const energyEl = entry.querySelector('.agent-energy');
+                if (energyEl) {
+                    energyEl.textContent = `${Math.round(data.energy)}/${data.maxEnergy}`;
+                }
+            }
+        });
+    }
     else if (data.type === 'agentThoughts') {
         const container = document.getElementById('thoughts-container');
         if (container) { 
@@ -352,18 +381,15 @@ hytopia.onData((data) => {
                 <div class="thought-entry">
                     <div class="agent-header-info"> 
                         <span class="agent-name">${agent.name}</span>
-                        <img src="assets/ui/icons/energy_icon.png" class="energy-icon icon" alt="E:"> 
-                        <span class="agent-energy">(<span class="agent-energy-value">${energyText}</span>)</span>
-                        <img src="assets/ui/icons/fish_icon.png" class="fish-icon icon" alt="Fish:"> 
-                        <span class="agent-inventory">(<span class="agent-fish-count">${fishCount}</span>)</span>
+                        <img src="{{CDN_ASSETS_URL}}/ui/icons/energy_icon.png" class="energy-icon icon" alt="E:"> 
+                        <span class="agent-energy">${Math.round(agent.energy)}/${agent.maxEnergy}</span>
+                        <img src="{{CDN_ASSETS_URL}}/ui/icons/fish_icon.png" class="fish-icon icon" alt="Fish:"> 
+                        <span class="agent-inventory">${fishCount}</span>
                     </div>
                     <div class="thought-text">
                         <div class="thought-text-content" id="${thoughtId}">${safeThought}</div>
                         <button class="toggle-thoughts" data-target-id="${thoughtId}" style="display: none;">Show More</button>
                     </div>
-                    
-                    <!-- REMOVED Old Energy/Inventory display -->
-
                 </div>
             `}).join('');
 

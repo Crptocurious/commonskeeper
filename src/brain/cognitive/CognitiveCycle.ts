@@ -2,11 +2,12 @@ import type { BaseAgent } from '../../BaseAgent';
 import { Reflect } from './Reflect';
 import { Plan } from './Plan';
 import type { ChatOptions } from './Plan';
+import { REFLECTION_CONFIG } from '../../config/constants';
 
 export class CognitiveCycle {
     private reflect: Reflect;
     private plan: Plan;
-    private readonly REFLECTION_INTERVAL_TICKS: number = 10 * 60 * 60; // 10 minutes at 60 TPS
+    private readonly REFLECTION_INTERVAL_TICKS: number = REFLECTION_CONFIG.REFLECTION_INTERVAL_TICKS;
 
     constructor(systemPrompt: string) {
         this.reflect = new Reflect();
@@ -18,16 +19,16 @@ export class CognitiveCycle {
      * 1. Time since last reflection (> 10 minutes)
      * 2. Phase changes
      */
-    private shouldReflect(agent: BaseAgent, currentTick: number): boolean {
+    private shouldReflect(agent: BaseAgent): boolean {
+
         // Skip reflection during HARVEST phase
-        if (agent.currentPhase === 'HARVEST') {
+        if (agent.currentAgentPhase === 'HARVEST') {
             return false;
         }
 
-        const timeSinceLastReflection = currentTick - agent.getLastReflectionTick();
-        const lastPhaseMemory = agent.getScratchMemory().getRecentMemories({ types: ['phase_change'], maxCount: 1 })[0];
-        const lastKnownPhase = lastPhaseMemory ? lastPhaseMemory.content : null;
-        const phaseChanged = agent.currentPhase !== lastKnownPhase;
+        const currentTick = agent.currentAgentTick;
+        const timeSinceLastReflection = currentTick - agent.lastReflectionTick;
+        const phaseChanged = agent.currentAgentPhase !== agent.lastAgentPhase;
 
         return timeSinceLastReflection >= this.REFLECTION_INTERVAL_TICKS || phaseChanged;
     }
@@ -38,12 +39,14 @@ export class CognitiveCycle {
      * 2. If needed, reflect on current state and recent history
      * 3. Use reflection insights (or original trigger) to inform planning
      */
-    public async executeCycle(agent: BaseAgent, trigger: string): Promise<void> {
+    public async execute(agent: BaseAgent, trigger: string): Promise<void> {
         try {
-            const currentTick = agent.getCurrentTick();
-            const needsReflection = this.shouldReflect(agent, currentTick);
-
+            const currentTick = agent.currentAgentTick;
+           
+            const needsReflection = this.shouldReflect(agent);
+            
             if (!needsReflection) {
+                console.log(`${agent.name}: Skipping reflection - proceeding directly to planning`);
                 // Skip reflection, proceed directly to planning
                 this.plan.chat(agent, {
                     type: "Environment",
@@ -52,6 +55,7 @@ export class CognitiveCycle {
                 return;
             }
 
+            console.log(`${agent.name}: Performing reflection at tick ${currentTick}`);
             // Perform reflection
             const reflection = await this.reflect.reflect(agent);
             

@@ -1,65 +1,40 @@
-import type { GameState, GameStateHistory } from "../../types/GameState";
-
-interface Memory {
-    type: string;
-    content: any;
-    timestamp: number;
-}
+import type { ActionHistory, ActionHistoryEntry } from "../../types/AgentState";
+import type { CompleteState } from "../../BaseAgent";
 
 export class ScratchMemory {
-    private agentId: string;
-    private memories: Memory[] = [];
-    private gameStateHistory: GameStateHistory;
-    private readonly MAX_MEMORIES = 1000;
-    private readonly MAX_GAME_STATES = 5; // Store last 5 game states
+    private actionHistory: ActionHistory;
+    private readonly MAX_HISTORY_LENGTH = 100;
 
-    constructor(agentId: string) {
-        this.agentId = agentId;
-        this.gameStateHistory = {
-            states: [],
-            maxHistoryLength: this.MAX_GAME_STATES
+    constructor(agentName: string) {
+        this.actionHistory = {
+            entries: [],
+            maxHistoryLength: this.MAX_HISTORY_LENGTH
         };
     }
 
-    public addMemory(memory: Memory): void {
-        this.memories.push(memory);
-        if (this.memories.length > this.MAX_MEMORIES) {
-            this.memories.shift(); // Remove oldest memory if we exceed max
+    public addActionMemory(tick: number, stateBeforeAction: CompleteState, actionType: string, actionArgs: any) {
+        const entry: ActionHistoryEntry = {
+            tick,
+            stateBeforeAction,
+            action: {
+                type: actionType,
+                args: actionArgs
+            }
+        };
+
+        this.actionHistory.entries.unshift(entry);
+
+        // Maintain history length
+        if (this.actionHistory.entries.length > this.actionHistory.maxHistoryLength) {
+            this.actionHistory.entries.pop();
         }
     }
 
-    public getRecentMemories(options: { types?: string[]; maxCount?: number } = {}): Memory[] {
-        let filtered = this.memories;
-        if (options.types) {
-            filtered = filtered.filter(m => options.types!.includes(m.type));
-        }
-        const count = options.maxCount || filtered.length;
-        return filtered.slice(-count);
+    public getActionHistory(): ActionHistory {
+        return this.actionHistory;
     }
 
-    public updateGameState(newState: GameState): void {
-        this.gameStateHistory.states.push(newState);
-        if (this.gameStateHistory.states.length > this.gameStateHistory.maxHistoryLength) {
-            this.gameStateHistory.states.shift(); // Remove oldest state if we exceed max
-        }
+    public getRecentMemories(count: number = 5): ActionHistoryEntry[] {
+        return this.actionHistory.entries.slice(0, count);
     }
-
-    public getLastGameState(): GameState | undefined {
-        if (this.gameStateHistory.states.length === 0) return undefined;
-        return this.gameStateHistory.states[this.gameStateHistory.states.length - 1];
-    }
-
-    public getGameStateHistory(): GameState[] {
-        return [...this.gameStateHistory.states];
-    }
-
-    public getLakeState(): any {
-        const lastState = this.getLastGameState();
-        return lastState?.lake;
-    }
-
-    public clearMemories(): void {
-        this.memories = [];
-        this.gameStateHistory.states = [];
-    }
-}
+} 
