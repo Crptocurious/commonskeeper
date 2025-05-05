@@ -4,6 +4,7 @@ import { PathfindingBehavior } from "../behaviors/PathfindingBehavior";
 import { SpeakBehavior } from "../behaviors/SpeakBehavior";
 import { FishingBehavior } from "../behaviors/FishingBehavior";
 import { EatBehavior } from "../behaviors/EatBehavior";
+import { PlanningBehavior } from "../behaviors/PlanningBehavior";
 import { REFLECTION_PROMPT } from "./prompts";
 export const SIMULATION_CONFIG = {
     MAX_ENERGY: 100,
@@ -60,7 +61,8 @@ export const FISHERMAN_BEHAVIOR_CONFIGS: BehaviorConfig[] = [
     { type: PathfindingBehavior },
     { type: SpeakBehavior },
     { type: FishingBehavior, args: ['lake' as const] },
-    { type: EatBehavior }
+    { type: EatBehavior },
+    { type: PlanningBehavior }
 ];
 
 // Common instructions template for all agents
@@ -87,14 +89,14 @@ You are a fisherman fishing in a shared lake with 2 others (3 total). Your survi
 *   Low Energy Auto-Eat: If energy drops below ${SIMULATION_CONFIG.LOW_ENERGY_THRESHOLD} and you have fish, you will automatically eat one.
 
 **Schedule (1-hour cycle):**
-*   PLANNING phase (${TIME_CONFIG.PLANNING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.planningDurationTicks} ticks): Plan your harvest. Decide how much to fish (0-5 tons suggested). Use <plan harvest=N />. Perform reflections.
+*   PLANNING phase (${TIME_CONFIG.PLANNING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.planningDurationTicks} ticks): Plan your harvest. Decide how much to fish (0-5 tons suggested). Use <action type="plan_harvest">{ "amount": N }</action>. Perform reflections.
 *   HARVESTING phase (${TIME_CONFIG.HARVESTING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.harvestingDurationTicks} ticks): ONLY time to fish. Use <action type="cast_rod"></action> when it's your turn.
 *   DISCUSSION phase (${TIME_CONFIG.DISCUSSION_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.discussionDurationTicks} ticks): Discuss results and coordinate. Use <action type="townhall_speak">{"message": "..."}</action>. Report actual catch using <report harvest=X />.
 
 **Your Goal:** Survive long-term. Coordinate with others during DISCUSSION to avoid PERMANENT COLLAPSE.
 
 **Decision/Action Required (Check current phase!):**
-1.  PLANNING: Output: <plan harvest=N />. Reason in <monologue>. Base decision on lake stock, energy, discussion summary, and **avoiding permanent collapse**.
+1.  PLANNING: Output: <action type="plan_harvest">{ "amount": N }</action>. Reason in <monologue>. Base decision on lake stock, energy, discussion summary, and **avoiding permanent collapse**.
 2.  HARVESTING (when it's your turn): Output: <action type="cast_rod"></action> to attempt fishing.
 3.  DISCUSSION: Output: <report harvest=X /> (X = actual fish caught last harvest). Output: <action type="townhall_speak">{"message": "Your public message here."}</action> to discuss/coordinate.
 4.  Nearby Speak (Any Time): Output: <action type="speak">{"message": "Your nearby message here."}</action> for local chat.

@@ -42,8 +42,8 @@ export class FishingBehavior implements AgentBehavior {
 		return distance <= this.FISHING_RANGE;
 	}
 
-	private rollForFish(world: GameWorld): FishResult {
-		const harvestedAmount = this.lakeManager.harvest(1, world.currentTick, world);
+	private rollForFish(world: GameWorld, plannedAmount: number): FishResult {
+		const harvestedAmount = this.lakeManager.harvest(plannedAmount, world.currentTick, world);
 		return {
 			success: harvestedAmount > 0,
 			harvestedAmount: harvestedAmount
@@ -63,6 +63,12 @@ export class FishingBehavior implements AgentBehavior {
 			if (agent.currentAgentPhase !== 'HARVESTING') {
 				console.log(`${agent.name} tried to fish during ${agent.currentAgentPhase} phase.`);
 				return `You can only fish during the HARVESTING phase. It is currently ${agent.currentAgentPhase}.`;
+			}
+
+			// --- Check if agent has a plan ---
+			const planAmount = agent.plannedHarvestAmount;
+			if (planAmount === null || planAmount <= 0) {
+				return "You haven't planned how much to fish this cycle, or your plan was to fish zero. Use plan_harvest in the PLANNING phase.";
 			}
 
 			// Log the attempt
@@ -92,11 +98,14 @@ export class FishingBehavior implements AgentBehavior {
 			// Simulate fishing time
 			setTimeout(() => {
 				this.isFishing = false;
-				const result = this.rollForFish(world);
+				const result = this.rollForFish(world, planAmount);
+
+				// Reset the plan after the attempt
+				agent.plannedHarvestAmount = null;
 
 				if (!result.success) {
 					agent.handleEnvironmentTrigger(
-						"Nothing seems to be biting..."
+						`You tried to catch ${planAmount} fish, but nothing seems to be biting...`
 					);
 					return;
 				}
@@ -111,11 +120,11 @@ export class FishingBehavior implements AgentBehavior {
 				});
 
 				agent.handleEnvironmentTrigger(
-					`You caught ${result.harvestedAmount} fish!`
+					`You tried to catch ${planAmount} fish and successfully caught ${result.harvestedAmount}!`
 				);
 			}, 5000); // 5 second fishing time
 
-			return "Casting your line...";
+			return `Casting your line to try and catch ${planAmount} fish...`;
 		} else if (toolName === "give_fish") {
 			const { target } = args;
 			const fishDescription = "fish";
