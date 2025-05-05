@@ -62,16 +62,18 @@ export class Lake extends EventEmitter {
    * Should be called periodically (e.g., once per round/day) by the simulation.
    * @param currentTick - The current game tick.
    * @param world - Optional world instance to update UI.
+   * @returns The amount of fish stock regenerated.
    * Emits 'lakeUpdated' event if world is provided.
    */
-  regenerate(currentTick: number, world?: GameWorld): void {
+  regenerate(currentTick: number, world?: GameWorld): number {
     // Do not regenerate if the lake is permanently collapsed
     if (this.isCollapsed()) {
-        return;
+        return 0; // Return 0 if collapsed
     }
 
     const stockBefore = this.currentStock;
     let stockAfter = stockBefore; // Initialize with before value
+    let regeneratedAmount = 0; // Initialize regenerated amount
 
     // Doubling rule
     if (this.currentStock > 0 && this.currentStock < this.capacity) {
@@ -82,6 +84,7 @@ export class Lake extends EventEmitter {
         }
         this.currentStock = stockAfter;
         this.lastUpdateTick = currentTick;
+        regeneratedAmount = stockAfter - stockBefore; // Calculate the regenerated amount
     }
     // Else: stock is 0 or at capacity, no change from doubling rule
 
@@ -100,6 +103,8 @@ export class Lake extends EventEmitter {
     if (world) {
         this.emit('lakeUpdated', world, this);
     }
+    
+    return regeneratedAmount; // Return the calculated amount
   }
 
   /**
