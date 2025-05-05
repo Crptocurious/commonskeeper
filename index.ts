@@ -19,6 +19,7 @@ import { PlayerHandlers } from "./src/handlers/PlayerHandler";
 import type { GameWorld } from "./src/types/GameState";
 import { MetricsTracker } from "./src/MetricsTracker";
 import { EVENT_COLLAPSE } from "./src/Lake";
+import type { GamePhase } from "./src/types/GameState";
 
 // Define the agent configurations
 
@@ -29,7 +30,7 @@ const TOTAL_SIMULATION_TICKS = DERIVED_TIME_CONFIG.totalCycleTicks * CYCLES_TO_R
 startServer((world: World) => {
     const gameWorld = world as GameWorld;
     gameWorld.currentTick = 0;
-    gameWorld.currentPhase = 'TOWNHALL';
+    gameWorld.currentPhase = 'PLANNING';
     gameWorld.agents = []; // Initialize agents array on gameWorld
     let totalElapsedTicks = 0; // Track total ticks for simulation end
 
@@ -72,39 +73,51 @@ startServer((world: World) => {
         totalElapsedTicks++;
         gameWorld.currentTick++;
 
-        // Calculate which phase we should be in based on current tick within the cycle
+        // Determine current phase based on ticks within the cycle
         const totalCycleTicks = DERIVED_TIME_CONFIG.totalCycleTicks;
-        
-        if (gameWorld.currentTick >= totalCycleTicks) {
-            metricsTracker.cycleEnded(totalElapsedTicks); // Log end of cycle metrics *before* resetting tick
-            gameWorld.currentTick = 0; // Reset tick counter for the new cycle
-        }
-        
-        const ticksInCurrentCycle = gameWorld.currentTick;
+        let newPhase: GamePhase;
+        const ticksInCurrentCycle = gameWorld.currentTick % totalCycleTicks; // Use modulo for current position in cycle
 
-        // This ensures that first phase is always townhall
-        const newPhase = ticksInCurrentCycle < DERIVED_TIME_CONFIG.townhallDurationTicks ? 'TOWNHALL' : 'HARVEST';
-        
-        // If phase changed, update UI and handle phase transition
+        if (ticksInCurrentCycle < DERIVED_TIME_CONFIG.planningDurationTicks) {
+            newPhase = 'PLANNING';
+        } else if (ticksInCurrentCycle < DERIVED_TIME_CONFIG.planningDurationTicks + DERIVED_TIME_CONFIG.harvestingDurationTicks) {
+            newPhase = 'HARVESTING';
+        } else {
+            newPhase = 'DISCUSSION';
+        }
+
+        // Detect cycle end (transition from Discussion back to Planning implicitly handles this via modulo)
+        const justCompletedCycle = gameWorld.currentTick > 0 && gameWorld.currentTick % totalCycleTicks === 0;
+        if (justCompletedCycle) {
+             // Log end of cycle metrics *before* potential phase change / regeneration
+            metricsTracker.cycleEnded(totalElapsedTicks);
+        }
+
+        // Phase Change Logic
         if (newPhase !== gameWorld.currentPhase) {
             const oldPhase = gameWorld.currentPhase;
             gameWorld.currentPhase = newPhase;
             UIService.sendPhaseUpdate(gameWorld);
+            console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Tick ${totalElapsedTicks}: Phase Change: ${oldPhase} -> ${newPhase} ---`);
 
-            // Record fish stock at the end of each phase
-            metricsTracker.recordFishStock(totalElapsedTicks, lake.getCurrentStock());
-            
-            // If transitioning TO HARVEST (meaning Townhall just ended), lake regenerates
-            if (newPhase === 'HARVEST') {
-                const regeneratedAmount = lake.regenerate(totalElapsedTicks, gameWorld); 
-                metricsTracker.recordLakeRegeneration(regeneratedAmount);
-                UIService.sendLakeStatusUpdate(gameWorld, lake); // Update UI after regeneration
-                console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Phase Change: TOWNHALL -> HARVEST. Lake regenerated: ${regeneratedAmount.toFixed(2)} ---`);
+            // Record fish stock at the end of HARVESTING and DISCUSSION phases
+            if (oldPhase === 'HARVESTING' || oldPhase === 'DISCUSSION') {
+                 metricsTracker.recordFishStock(totalElapsedTicks, lake.getCurrentStock());
             }
-            if (newPhase === 'TOWNHALL') {
-                 console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Phase Change: HARVEST -> TOWNHALL ---`);
+
+            // Lake Regenerates at the START of the PLANNING phase (end of Discussion)
+            if (newPhase === 'PLANNING') {
+                const regeneratedAmount = lake.regenerate(totalElapsedTicks, gameWorld);
+                metricsTracker.recordLakeRegeneration(regeneratedAmount); 
+                UIService.sendLakeStatusUpdate(gameWorld, lake); // Update UI after regeneration
+                console.log(`--- Lake Regenerated: ${regeneratedAmount.toFixed(2)} ---`);
             }
         }
+
+        // Note: We no longer reset gameWorld.currentTick to 0 within the loop.
+        // totalElapsedTicks tracks total time, and (gameWorld.currentTick % totalCycleTicks) determines phase.
+        // Simulation end condition handles stopping.
+
 	}, 1000 / TIME_CONFIG.TICKS_PER_SECOND);
     
     // Assign agents to gameWorld.agents

@@ -3,7 +3,7 @@ import { Lake } from "../Lake";
 import { BaseAgent } from "../BaseAgent";
 import { MetricsTracker } from "../MetricsTracker";
 
-export type GamePhase = 'HARVEST' | 'TOWNHALL';
+export type GamePhase = 'PLANNING' | 'HARVESTING' | 'DISCUSSION';
 
 export interface PhaseChangeEvent {
     phase: GamePhase;

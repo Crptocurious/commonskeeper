@@ -21,21 +21,23 @@ export const TIME_CONFIG = {
     TICKS_PER_MINUTE: 60 * 60,
     TICKS_PER_HOUR: 60 * 60 * 60,
     TICKS_PER_DAY: 60 * 60 * 60 * 24,
-    HARVEST_WINDOW_DURATION_MINUTES: 10,
-    TOWNHALL_DURATION_MINUTES: 50
+    PLANNING_DURATION_MINUTES: 20,
+    HARVESTING_DURATION_MINUTES: 10,
+    DISCUSSION_DURATION_MINUTES: 30,
 };
 
 export const REFLECTION_CONFIG = {
-    REFLECTION_INTERVAL_TICKS: Math.max(TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.HARVEST_WINDOW_DURATION_MINUTES, TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.TOWNHALL_DURATION_MINUTES),
+    REFLECTION_INTERVAL_TICKS: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.PLANNING_DURATION_MINUTES,
     REFLECTION_PROMPT: REFLECTION_PROMPT
 };
 
 // Derived time configurations
 export const DERIVED_TIME_CONFIG = {
-    harvestWindowTicks: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.HARVEST_WINDOW_DURATION_MINUTES,
-    townhallDurationTicks: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.TOWNHALL_DURATION_MINUTES,
+    planningDurationTicks: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.PLANNING_DURATION_MINUTES,
+    harvestingDurationTicks: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.HARVESTING_DURATION_MINUTES,
+    discussionDurationTicks: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.DISCUSSION_DURATION_MINUTES,
     get totalCycleTicks() {
-        return this.harvestWindowTicks + this.townhallDurationTicks;
+        return this.planningDurationTicks + this.harvestingDurationTicks + this.discussionDurationTicks;
     }
 };
 
@@ -67,38 +69,38 @@ You are a fisherman fishing in a shared lake with 2 others (3 total). Your survi
 
 **Lake Rules (CRITICAL):**
 *   Capacity: ${SIMULATION_CONFIG.LAKE_CAPACITY} tons.
-*   Collapse: If stock drops to ${SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD} ton or less after harvest, the lake collapses PERMANENTLY. No more fishing possible, ever.
-*   Regeneration: At the start of each HARVEST phase (every hour), current stock DOUBLES, up to ${SIMULATION_CONFIG.LAKE_CAPACITY} tons max. No regeneration if collapsed.
+*   Collapse: If stock drops to ${SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD} ton or less after harvest, the lake collapses PERMANENTLY.
+*   Regeneration: At the start of each PLANNING phase (every hour), current stock DOUBLES, up to ${SIMULATION_CONFIG.LAKE_CAPACITY} tons max. No regeneration if collapsed.
 
 **Simulation Context (Check your 'state'):**
 *   Current Time: state.currentTimeTicks
-*   Current Phase: state.currentPhase ('HARVEST' or 'TOWNHALL')
+*   Current Phase: state.currentPhase ('PLANNING', 'HARVESTING', or 'DISCUSSION')
 *   Your Energy: state.energy / 1000
 *   Your Inventory: state.inventory fish
 *   Lake Status: state.lakeStock (current fish)
-*   Townhall Reports: state.lastHarvestReports (dictionary of {agentName: fishCaught})
+*   Last Discussion Summary: state.lastDiscussionSummary (if available)
 
 **Energy & Survival:**
 *   You constantly lose energy. Actions cost energy.
-*   If energy hits 0, you die (simulation may end).
+*   If energy hits 0, you die.
 *   Eat fish from your inventory to regain energy. Each fish restores ${SIMULATION_CONFIG.ENERGY_PER_FISH} energy (up to ${SIMULATION_CONFIG.MAX_ENERGY} max).
 *   Low Energy Auto-Eat: If energy drops below ${SIMULATION_CONFIG.LOW_ENERGY_THRESHOLD} and you have fish, you will automatically eat one.
 
 **Schedule (1-hour cycle):**
-*   HARVEST phase: First ${TIME_CONFIG.HARVEST_WINDOW_DURATION_MINUTES} minutes (${DERIVED_TIME_CONFIG.harvestWindowTicks} ticks). ONLY time to fish. Fish one agent per tick (turn-based).
-*   TOWNHALL phase: Next ${TIME_CONFIG.TOWNHALL_DURATION_MINUTES} minutes (${DERIVED_TIME_CONFIG.townhallDurationTicks} ticks). Discuss previous harvest.
+*   PLANNING phase (${TIME_CONFIG.PLANNING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.planningDurationTicks} ticks): Plan your harvest. Decide how much to fish (0-5 tons suggested). Use <plan harvest=N />. Perform reflections.
+*   HARVESTING phase (${TIME_CONFIG.HARVESTING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.harvestingDurationTicks} ticks): ONLY time to fish. Use <action type="cast_rod"></action> when it's your turn.
+*   DISCUSSION phase (${TIME_CONFIG.DISCUSSION_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.discussionDurationTicks} ticks): Discuss results and coordinate. Use <action type="townhall_speak">{"message": "..."}</action>. Report actual catch using <report harvest=X />.
 
-**Your Goal:** Survive long-term. Decide how much fish (suggested range: 0-5 tons, consider capacity ${SIMULATION_CONFIG.LAKE_CAPACITY}) to attempt harvesting in the upcoming HARVEST window. Catching too much risks PERMANENT COLLAPSE.
+**Your Goal:** Survive long-term. Coordinate with others during DISCUSSION to avoid PERMANENT COLLAPSE.
 
-**Decision/Action Required:**
-1.  Harvest Plan (During TOWNHALL/Before HARVEST): Output: <plan harvest=N />. Reason in <monologue>. Base decision on lake stock, energy (1 fish = ~10 energy), others' reports, and **avoiding permanent collapse**.
-2.  Harvest Action (During HARVEST, when it's your turn): Output: <action type="cast_rod"></action> to attempt fishing. You can only do this once per turn.
-3.  Townhall Report (During TOWNHALL): Output: <report harvest=X /> (X = actual fish caught last harvest).
-4.  Townhall Speak (During TOWNHALL): Output: <action type="townhall_speak">{"message": "Your public message here."}</action> to broadcast to everyone.
-5.  Nearby Speak (Any Time): Output: <action type="speak">{"message": "Your nearby message here."}</action> for local chat.
-6.  Movement/Other (Optional): Output: <action type="pathfindTo">...</action> to move to pier (coords: ${LOCATIONS.pier.x},${LOCATIONS.pier.y},${LOCATIONS.pier.z}).
+**Decision/Action Required (Check current phase!):**
+1.  PLANNING: Output: <plan harvest=N />. Reason in <monologue>. Base decision on lake stock, energy, discussion summary, and **avoiding permanent collapse**.
+2.  HARVESTING (when it's your turn): Output: <action type="cast_rod"></action> to attempt fishing.
+3.  DISCUSSION: Output: <report harvest=X /> (X = actual fish caught last harvest). Output: <action type="townhall_speak">{"message": "Your public message here."}</action> to discuss/coordinate.
+4.  Nearby Speak (Any Time): Output: <action type="speak">{"message": "Your nearby message here."}</action> for local chat.
+5.  Movement/Other (Optional): Output: <action type="pathfindTo">...</action> to move to pier (coords: ${LOCATIONS.pier.x},${LOCATIONS.pier.y},${LOCATIONS.pier.z}).
 
-Remember: Collapse is PERMANENT. Be careful.
+Remember: Collapse is PERMANENT. Communicate and plan wisely.
 `;
 
 // Agent-specific configurations
