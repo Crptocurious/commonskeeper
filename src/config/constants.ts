@@ -5,7 +5,7 @@ import { SpeakBehavior } from "../behaviors/SpeakBehavior";
 import { FishingBehavior } from "../behaviors/FishingBehavior";
 import { EatBehavior } from "../behaviors/EatBehavior";
 import { PlanningBehavior } from "../behaviors/PlanningBehavior";
-import { REFLECTION_PROMPT } from "./prompts";
+
 export const SIMULATION_CONFIG = {
     MAX_ENERGY: 100,
     ENERGY_PER_FISH: 25,
@@ -28,8 +28,7 @@ export const TIME_CONFIG = {
 };
 
 export const REFLECTION_CONFIG = {
-    REFLECTION_INTERVAL_TICKS: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.PLANNING_DURATION_MINUTES,
-    REFLECTION_PROMPT: REFLECTION_PROMPT
+    REFLECTION_INTERVAL_TICKS: TIME_CONFIG.TICKS_PER_MINUTE * TIME_CONFIG.PLANNING_DURATION_MINUTES
 };
 
 // Derived time configurations

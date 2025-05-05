@@ -1,5 +1,6 @@
 import { World, Player } from "hytopia";
 import type { AgentBehavior, BaseAgent } from "../BaseAgent";
+import { buildSpeakPrompt } from "../config/prompts";
 
 /**
  * Very simple implementation of speak behavior for Agents.
@@ -10,20 +11,7 @@ export class SpeakBehavior implements AgentBehavior {
 	onUpdate(agent: BaseAgent, world: World): void {}
 
 	getPromptInstructions(): string {
-		return `
-To speak out loud (nearby chat, audible to agents/players within ~10m):
-<action type="speak">
-{
-	"message": "Your nearby message here."
-}
-</action>
-
-To speak publicly during the TOWNHALL phase (broadcast to everyone):
-<action type="townhall_speak">
-{
-	"message": "Your public townhall message here."
-}
-</action>`;
+		return buildSpeakPrompt();
 	}
 
 	getState(): string {

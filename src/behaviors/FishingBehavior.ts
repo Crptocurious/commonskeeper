@@ -4,6 +4,7 @@ import { Lake } from "../Lake";
 import { logEvent } from "../logger";
 import { LOCATIONS, SIMULATION_CONFIG } from "../config/constants";
 import type { GameWorld } from "../types/GameState";
+import { buildFishingPrompt } from "../config/prompts";
 
 interface FishResult {
 	success: boolean;
@@ -162,16 +163,7 @@ export class FishingBehavior implements AgentBehavior {
 	}
 
 	getPromptInstructions(): string {
-		return `
-To fish at the pier (ONLY during HARVEST phase and when it's your turn): 
-<action type="cast_rod"></action>
-
-You must call cast_rod exactly like this, with the empty object inside the action tag.
-
-You must be within ${this.FISHING_RANGE} meters of the pier to fish.
-Each attempt takes 5 seconds and has a chance to catch nothing or a fish.
-You can only have one line in the water at a time.
-Fishing is only allowed during the HARVEST phase and only one agent can fish per tick.`;
+		return buildFishingPrompt(this.FISHING_RANGE);
 	}
 
 	getState(): string {

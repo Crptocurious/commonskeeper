@@ -4,6 +4,7 @@ import type { AgentBehavior } from "../BaseAgent";
 import { Player } from "hytopia";
 import type { GameWorld } from "../types/GameState";
 import { LOCATIONS } from "../config/constants";
+import { buildPathfindingPrompt } from "../config/prompts";
 
 
 interface Node {
@@ -39,7 +40,7 @@ export class PathfindingBehavior implements AgentBehavior {
 		if (!(agent.controller instanceof SimpleEntityController)) return;
 
 		// Check if we need to move to townhall during TOWNHALL phase
-		if (agent.currentAgentPhase === 'TOWNHALL') {
+		if (agent.currentAgentPhase === "TOWNHALL" as any) {
 			if (!this.isNearTownhall(agent) && this.path.length === 0) {
 				// Start pathfinding to townhall if we're not already there and not already pathfinding
 				this.onToolCall(agent, world, "pathfindTo", { targetName: "townhall" });
@@ -66,30 +67,25 @@ export class PathfindingBehavior implements AgentBehavior {
 
 		if (this.path.length > 0 && this.currentPathIndex < this.path.length) {
 			const nextPoint = this.path[this.currentPathIndex];
-			const distance = Vector3.fromVector3Like(agent.position).distance(
-				nextPoint
-			);
+			if (!nextPoint) return;
+
+			const distance = Vector3.fromVector3Like(agent.position).distance(nextPoint);
 
 			// Check if we're close enough to final destination
 			const isNearEnd = this.currentPathIndex >= this.path.length - 3;
 			if (isNearEnd) {
 				const finalPoint = this.path[this.path.length - 1];
-				const distanceToFinal = Vector3.fromVector3Like(
-					agent.position
-				).distance(finalPoint);
+				if (!finalPoint) return;
+
+				const distanceToFinal = Vector3.fromVector3Like(agent.position).distance(finalPoint);
 
 				if (distanceToFinal < 3) {
 					agent.stopModelAnimations(["walk_upper", "walk_lower"]);
 					agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]);
 					if (this.targetEntity) {
-						agent.controller.face(
-							this.targetEntity.position,
-							this.moveSpeed * 2
-						);
+						agent.controller.face(this.targetEntity.position, this.moveSpeed * 2);
 					}
-					agent.handleEnvironmentTrigger(
-						`You have arrived at your destination.`
-					);
+					agent.handleEnvironmentTrigger("You have arrived at your destination.");
 					this.targetEntity = undefined;
 					this.path = [];
 					this.currentPathIndex = 0;
@@ -102,33 +98,22 @@ export class PathfindingBehavior implements AgentBehavior {
 				this.isJumping = false; // Reset jump state when reaching waypoint
 				if (this.currentPathIndex >= this.path.length) {
 					if (this.targetEntity) {
-						agent.controller.face(
-							this.targetEntity.position,
-							this.moveSpeed * 2
-						);
+						agent.controller.face(this.targetEntity.position, this.moveSpeed * 2);
 						agent.stopModelAnimations(["walk_upper", "walk_lower"]);
 						agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]);
-
 						this.targetEntity = undefined;
 					}
-					agent.handleEnvironmentTrigger(
-						`You have arrived at your destination.`
-					);
+					agent.handleEnvironmentTrigger("You have arrived at your destination.");
 					return;
 				}
 			} else {
 				const yDiff = nextPoint.y - agent.position.y;
 				const horizontalDistance = Math.sqrt(
 					Math.pow(nextPoint.x - agent.position.x, 2) +
-						Math.pow(nextPoint.z - agent.position.z, 2)
+					Math.pow(nextPoint.z - agent.position.z, 2)
 				);
 
-				if (
-					yDiff > 0.5 &&
-					horizontalDistance < 1.5 &&
-					!this.isJumping &&
-					this.jumpCooldown === 0
-				) {
+				if (yDiff > 0.5 && horizontalDistance < 1.5 && !this.isJumping && this.jumpCooldown === 0) {
 					const direction = Vector3.fromVector3Like(nextPoint)
 						.subtract(Vector3.fromVector3Like(agent.position))
 						.normalize();
@@ -225,9 +210,11 @@ export class PathfindingBehavior implements AgentBehavior {
 	getState(): string {
 		// We want to return a message depending on whether or not we are currently pathfinding
 		if (this.path.length > 0) {
-			const distance = Vector3.fromVector3Like(
-				this.path[this.path.length - 1]
-			).distance(this.path[0]);
+			const lastPoint = this.path[this.path.length - 1];
+			const firstPoint = this.path[0];
+			if (!lastPoint || !firstPoint) return "Not currently pathfinding";
+			
+			const distance = Vector3.fromVector3Like(lastPoint).distance(firstPoint);
 			return `Pathfinding (${distance.toFixed(1)}m remaining)`;
 		} else {
 			return "Not currently pathfinding";
@@ -455,29 +442,6 @@ export class PathfindingBehavior implements AgentBehavior {
 	}
 
 	getPromptInstructions(): string {
-		return `
-To navigate to a target, use:
-<action type="pathfindTo">
-{
-	"targetName": "Name of character, player, or location (e.g. 'pier', 'townhall')",  // Optional
-	"coordinates": {  // Optional
-		"x": number,
-		"y": number, 
-		"z": number
-	}
-}
-</action>
-
-Returns:
-- Success message if pathfinding is successfully started
-- Error message if no path can be found or target doesn't exist
-
-The Pathfinding procedure will result in a later message when you arrive at your destination.
-
-During TOWNHALL phase, you will automatically move to within ${this.TOWNHALL_RANGE} meters of the townhall if you're not already there.
-When at the townhall, you will face other nearby agents to simulate interaction.
-
-You must provide either targetName OR coordinates.
-Available named locations: ${Object.keys(LOCATIONS).join(", ")}`;
+		return buildPathfindingPrompt(this.TOWNHALL_RANGE, LOCATIONS);
 	}
 }
