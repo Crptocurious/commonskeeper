@@ -1,5 +1,6 @@
 import type { ActionHistory, ActionHistoryEntry } from "../../types/AgentState";
 import type { CompleteState } from "../../BaseAgent";
+import type { FishingState } from "../../behaviors/FishingBehavior";
 
 export interface ChatHistoryEntry {
     agentName: string;
@@ -17,6 +18,7 @@ export interface TownhallHistory {
 export class ScratchMemory {
     private actionHistory: ActionHistory;
     private townhallHistory: TownhallHistory;
+    private fishingMemory: FishingState;
     private readonly MAX_HISTORY_LENGTH = 100;
     private readonly MAX_CHAT_HISTORY_LENGTH = 100;
 
@@ -30,6 +32,13 @@ export class ScratchMemory {
             isDiscussionInProgress: false,
             currentSpeakerIndex: 0,
             lastUpdateTick: 0
+        };
+        this.fishingMemory = {
+            currentFishingAgent: null,
+            fishingQueue: [],
+            harvestAmounts: new Map(),
+            isFishing: false,
+            harvestingCompleted: false
         };
     }
 
@@ -56,6 +65,17 @@ export class ScratchMemory {
             ...newHistory,
             messages: newHistory.messages.slice(-this.MAX_CHAT_HISTORY_LENGTH) // Keep only the most recent messages
         };
+    }
+
+    public updateFishingMemory(newState: Partial<FishingState>) {
+        this.fishingMemory = {
+            ...this.fishingMemory,
+            ...newState
+        };
+    }
+
+    public getFishingMemory(): FishingState {
+        return this.fishingMemory;
     }
 
     public getTownhallHistory(): TownhallHistory {
