@@ -123,7 +123,7 @@ startServer((world: World) => {
     // Assign agents to gameWorld.agents
     const agents: BaseAgent[] = [];
 
-    const gameContext = { lake }; // Used to provide context needed by the agents behavior
+    // const gameContext = { lake }; // Used to provide context needed by the agents behavior
     
     // Initialize world & agents
     gameWorld.loadMap(worldMap);

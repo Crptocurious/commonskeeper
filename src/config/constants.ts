@@ -4,6 +4,7 @@ import { PathfindingBehavior } from "../behaviors/PathfindingBehavior";
 import { SpeakBehavior } from "../behaviors/SpeakBehavior";
 import { FishingBehavior } from "../behaviors/FishingBehavior";
 import { PlanningBehavior } from "../behaviors/PlanningBehavior";
+import { CommunicationBehavior } from "../behaviors/CommunicationBehavior";
 
 export const SIMULATION_CONFIG = {
     CHAT_RANGE: 10,
@@ -56,7 +57,8 @@ export const FISHERMAN_BEHAVIOR_CONFIGS: BehaviorConfig[] = [
     { type: PathfindingBehavior },
     { type: SpeakBehavior },
     { type: FishingBehavior, args: ['lake' as const] },
-    { type: PlanningBehavior }
+    { type: PlanningBehavior },
+    { type: CommunicationBehavior }
 ];
 
 // Common instructions template for all agents
