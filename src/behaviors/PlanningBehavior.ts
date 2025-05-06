@@ -11,16 +11,23 @@ import { UIService } from "../services/UIService";
 export class PlanningBehavior implements AgentBehavior {
     // Static Map to track last trigger time for each agent across all instances
     private static lastTriggerTimes: Map<string, number> = new Map();
-    // Static Map to track last monologue update time for each agent
     private static lastMonologueUpdateTimes: Map<string, number> = new Map();
-    // Static Map to track when plannedHarvestAmount was set for each agent
     private static harvestPlanSetTimes: Map<string, number> = new Map();
-    // Minimum wait time between triggers (planning phase duration / 10)
-    private readonly TRIGGER_COOLDOWN = Math.floor(DERIVED_TIME_CONFIG.planningDurationTicks / 10);
-    // Update monologue every 5 seconds
-    private readonly MONOLOGUE_UPDATE_COOLDOWN = TIME_CONFIG.TICKS_PER_SECOND * 5;
-    // Wait 30 seconds after setting plannedHarvestAmount before showing monologue
-    private readonly INITIAL_MONOLOGUE_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 30;
+    
+    // Configuration flags
+    private readonly ENABLE_DELAYS = true; // Set to false to disable all timing delays
+    
+    // Timing constants (in ticks)
+    private readonly TIMINGS = {
+        TRIGGER_INTERVAL: Math.floor(DERIVED_TIME_CONFIG.planningDurationTicks / 10),
+        MONOLOGUE_UPDATE_INTERVAL: TIME_CONFIG.TICKS_PER_SECOND * 10,
+        INITIAL_WAIT: TIME_CONFIG.TICKS_PER_SECOND * 30
+    };
+
+    private shouldUpdate(currentTick: number, lastUpdateTime: number, interval: number): boolean {
+        if (!this.ENABLE_DELAYS) return true;
+        return (currentTick - lastUpdateTime) >= interval;
+    }
 
     onUpdate(agent: BaseAgent, world: GameWorld): void {
         // Only process during PLANNING phase
@@ -32,57 +39,46 @@ export class PlanningBehavior implements AgentBehavior {
         if (agent.plannedHarvestAmount === null) {
             const lastTriggerTime = PlanningBehavior.lastTriggerTimes.get(agent.name);
             
-            // If no previous trigger or last trigger was 0, trigger immediately
+            // If no previous trigger, trigger immediately
             if (!lastTriggerTime) {
+                console.log(`${agent.name} triggered initially at tick ${world.currentTick}`);
                 agent.handleEnvironmentTrigger("It's time to plan your harvest amount for this cycle.");
                 PlanningBehavior.lastTriggerTimes.set(agent.name, world.currentTick);
                 return;
             }
 
-            // Otherwise check cooldown
-            const timeSinceLastTrigger = world.currentTick - lastTriggerTime;
-            if (timeSinceLastTrigger >= this.TRIGGER_COOLDOWN) {
+            // For subsequent triggers, use the interval
+            if (this.shouldUpdate(world.currentTick, lastTriggerTime, this.TIMINGS.TRIGGER_INTERVAL)) {
+                console.log(`${agent.name} triggered at tick ${world.currentTick}`);
                 agent.handleEnvironmentTrigger("It's time to plan your harvest amount for this cycle.");
                 PlanningBehavior.lastTriggerTimes.set(agent.name, world.currentTick);
             }
         } else {
-            // Get when the harvest plan was set
             const planSetTime = PlanningBehavior.harvestPlanSetTimes.get(agent.name) || 0;
-            const timeSincePlanSet = world.currentTick - planSetTime;
+            const lastUpdateTime = PlanningBehavior.lastMonologueUpdateTimes.get(agent.name) || 0;
 
-            // Only start showing monologue updates after the initial delay
-            if (timeSincePlanSet >= this.INITIAL_MONOLOGUE_DELAY) {
-                // Check if enough time has passed since last monologue update
-                const lastUpdateTime = PlanningBehavior.lastMonologueUpdateTimes.get(agent.name) || 0;
-                const timeSinceLastUpdate = world.currentTick - lastUpdateTime;
+            // Check if we've waited long enough after setting the plan
+            if (this.shouldUpdate(world.currentTick, planSetTime, this.TIMINGS.INITIAL_WAIT) &&
+                this.shouldUpdate(world.currentTick, lastUpdateTime, this.TIMINGS.MONOLOGUE_UPDATE_INTERVAL)) {
                 
-                // Only update if we have a valid planned amount and enough time has passed
-                if (timeSinceLastUpdate >= this.MONOLOGUE_UPDATE_COOLDOWN && 
-                    typeof agent.plannedHarvestAmount === 'number' && 
-                    !isNaN(agent.plannedHarvestAmount)) {
+                const remainingTicks = this.getRemainingTicksInPhase(world.currentTick);
+                if (remainingTicks > 0) {
+                    const remainingSeconds = Math.floor(remainingTicks / TIME_CONFIG.TICKS_PER_SECOND);
+                    const message = `I have decided to harvest ${agent.plannedHarvestAmount} fish. I will wait for ${remainingSeconds} seconds until the harvesting phase begins.`;
                     
-                    // Calculate remaining time
-                    const remainingTicks = this.getRemainingTicksInPhase(world.currentTick);
-                    if (remainingTicks > 0) {  // Only update if we have remaining time
-                        const remainingSeconds = Math.floor(remainingTicks / TIME_CONFIG.TICKS_PER_SECOND);
-                        const message = `I have decided to harvest ${agent.plannedHarvestAmount} fish. I will wait for ${remainingSeconds} seconds until the harvesting phase begins.`;
+                    // Only update if message changed
+                    if (message !== agent.getLastMonologue()) {
+                        agent.addInternalMonologue(message);
                         
-                        // Only update if the message would be different
-                        const currentMonologue = agent.getLastMonologue();
-                        if (currentMonologue !== message) {
-                            agent.addInternalMonologue(message);
-                            
-                            // Update UI for all players
-                            const playerEntities = world.entityManager.getAllPlayerEntities();
-                            playerEntities.forEach(playerEntity => {
-                                if (playerEntity?.player) {
-                                    UIService.sendAgentThoughts(playerEntity.player, world.agents);
-                                }
-                            });
-                            
-                            // console.log(`Updated ${agent.name}'s monologue:`, message); // Debug log
-                            PlanningBehavior.lastMonologueUpdateTimes.set(agent.name, world.currentTick);
-                        }
+                        // Update UI for all players
+                        const playerEntities = world.entityManager.getAllPlayerEntities();
+                        playerEntities.forEach(playerEntity => {
+                            if (playerEntity?.player) {
+                                UIService.sendAgentThoughts(playerEntity.player, world.agents);
+                            }
+                        });
+                        
+                        PlanningBehavior.lastMonologueUpdateTimes.set(agent.name, world.currentTick);
                     }
                 }
             }
@@ -90,23 +86,18 @@ export class PlanningBehavior implements AgentBehavior {
     }
 
     getPromptInstructions(): string {
-        // Instructions for this action are included in the main agent prompt
         return ``; 
     }
 
     getState(): string {
-        // Could return the current planned amount if desired
         return "Ready to process plans";
     }
 
     private getRemainingTicksInPhase(currentTick: number): number {
         const ticksInCurrentCycle = currentTick % DERIVED_TIME_CONFIG.totalCycleTicks;
-        // If we're in planning phase, ticksInCurrentCycle will be less than planningDurationTicks
-        // So remaining ticks is just planningDurationTicks minus how far we are into the cycle
         if (ticksInCurrentCycle < DERIVED_TIME_CONFIG.planningDurationTicks) {
             return DERIVED_TIME_CONFIG.planningDurationTicks - ticksInCurrentCycle;
         }
-        // If we're not in planning phase, something went wrong (this shouldn't happen due to phase checks)
         console.warn("Calculating remaining ticks while not in planning phase");
         return 0;
     }
@@ -145,7 +136,6 @@ export class PlanningBehavior implements AgentBehavior {
                 phase: agent.currentAgentPhase
             });
 
-            // Return confirmation to the agent
             return `Harvest plan set to ${amount}.`;
         }
     }
