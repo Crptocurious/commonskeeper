@@ -1,6 +1,7 @@
 import type { BaseAgent, CompleteState } from "../BaseAgent";
 import type { AgentBehavior } from "../BaseAgent";
 import type { ChatOptions } from "../brain/cognitive/Plan";
+import type { TownhallHistory } from "../brain/memory/ScratchMemory";
 import * as Constants from "../config/constants"; // Adjust path as needed
 
 // --- Core Rule Snippets ---
@@ -29,11 +30,11 @@ export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: Base
 **Current Phase: PLANNING (${constants.TIME_CONFIG.PLANNING_DURATION_MINUTES} mins)**
 * **Objective:** Decide your **intended harvest amount (N)** for the upcoming Harvest phase based on **inferred** lake health and strategic goals. You **do not know the exact current lake stock**.
 * **Available Information:** Lake Capacity, Collapse Threshold, Regeneration Rule, your total harvest so far, others' *reported* harvests from the last cycle (if available), summary of the last Discussion (if available).
-* **Your Task:** Output **ONE** \`<plan harvest=N />\` tag (where N is the integer amount you intend to try and catch, e.g., 0-10).
+* **Your Task:** Output **ONE** \`<action type="plan_harvest">{ "amount": N }</action>\` tag (where N is the integer amount you intend to try and catch, e.g., 0-10).
 * **Reasoning:** Justify N in your monologue. Estimate the current lake stock based on known rules and reported collective harvest from the previous cycle. Assess the risk of collapse based on your estimate and your planned harvest + anticipated harvest from others. Balance maximizing your potential wealth against the high risk of permanent collapse.
-* **Available Actions:** ONLY \`<plan harvest=N />\`. After outputting the plan, you will sit idle until the next phase.
+* **Available Actions:** ONLY \`<action type="plan_harvest">{ "amount": N }</action>\`. After outputting the plan, you will sit idle until the next phase.
 * **Action Syntax:**
-    <plan harvest=N /> `;
+    <action type="plan_harvest">{ "amount": N }</action> `;
 
     return `You are an AI Agent role-playing as a fisherman.
 ${CORE_RULES(constants)}
@@ -137,7 +138,7 @@ export function buildReflectSystemPrompt(): string {
     return `You are an AI agent analyzing your performance and the simulation state in a multiplayer fishing game. Your goal is long-term wealth (Total Fish Harvested) and lake sustainability. Focus on identifying trends, risks (especially collapse), opportunities for cooperation/efficiency, and potential strategy adjustments based ONLY on the provided state information. Provide concise, actionable insights.`;
 }
 
-export function buildReflectUserMessage(agentName: string, completeState: CompleteState): string {
+export function buildReflectUserMessage(agentName: string, completeState: CompleteState, townhallHistory: TownhallHistory): string {
     const constants = Constants;
     // REFLECTION ALSO DOES NOT KNOW CURRENT STOCK
     let gameContextForLLM: any = { ...completeState.game };
@@ -145,8 +146,7 @@ export function buildReflectUserMessage(agentName: string, completeState: Comple
 
     // Add historical/reported data if available in completeState.game
     const lastReports = gameContextForLLM.lastHarvestReports ? JSON.stringify(gameContextForLLM.lastHarvestReports) : "Not available";
-    // const stockTrend = gameContextForLLM.recentStockHistory ? JSON.stringify(gameContextForLLM.recentStockHistory) : "Not available";
-    // const harvestTrend = gameContextForLLM.recentHarvestHistory ? JSON.stringify(gameContextForLLM.recentHarvestHistory) : "Not available";
+    const chatHistory = townhallHistory.messages.map(entry => `[${entry.agentName}]: ${entry.message}`).join('\n');
 
     return `You are ${agentName}. Reflect on the situation based on information up to tick ${completeState.game.lastUpdateTick}.
 
@@ -167,9 +167,8 @@ ${JSON.stringify(gameContextForLLM, null, 2)}
 === Last Cycle's Harvest Reports ===
 ${lastReports}
 
-// Placeholder: Add other relevant history summaries if available
-// === Recent Harvest Trend (Total) === 
-
+=== Recent Townhall Discussion ===
+${chatHistory}
 
 **Reflection Task:** Analyze the available information. Provide concise insights regarding:
 1.  **Lake Sustainability Estimate:** Based on known rules (Capacity, Threshold, Regeneration) and the *reported* total harvest from the last cycle (${lastReports}), estimate the lake's health and the risk level for collapse. **Do not assume you know the current exact stock.**

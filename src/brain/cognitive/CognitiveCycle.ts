@@ -16,21 +16,17 @@ export class CognitiveCycle {
 
     /**
      * Determines if reflection is needed based on:
-     * 1. Time since last reflection (> 10 minutes)
-     * 2. Phase changes
+     * 1. Phase changes
+     * 2. Not being in HARVESTING or DISCUSSION phase
      */
     private shouldReflect(agent: BaseAgent): boolean {
-
-        // Skip reflection during HARVEST phase
-        if (agent.currentAgentPhase === 'HARVEST') {
+        // Skip reflection during HARVEST phase and COMMUNICATION phase
+        if (agent.currentAgentPhase === 'HARVESTING' || agent.currentAgentPhase === 'DISCUSSION') {
             return false;
         }
 
-        const currentTick = agent.currentAgentTick;
-        const timeSinceLastReflection = currentTick - agent.lastReflectionTick;
-        const phaseChanged = agent.currentAgentPhase !== agent.lastAgentPhase;
-
-        return timeSinceLastReflection >= this.REFLECTION_INTERVAL_TICKS || phaseChanged;
+        // Always reflect unless in restricted phases
+        return true;
     }
 
     /**
@@ -55,7 +51,7 @@ export class CognitiveCycle {
                 return;
             }
 
-            console.log(`${agent.name}: Performing reflection at tick ${currentTick}`);
+            console.log(`${agent.name}: Performing reflection`);
             // Perform reflection
             const reflection = await this.reflect.reflect(agent);
             

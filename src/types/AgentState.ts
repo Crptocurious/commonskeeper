@@ -67,7 +67,7 @@ export interface AgentState {
     internalMonologue: string[];
     nearbyEntities: NearbyEntity[];
     // scratchMemory: {
-    //     getRecentMemories(count?: number): ActionHistoryEntry[];
+    //     getRecentActionMemories(count?: number): ActionHistoryEntry[];
     // }
 }
 

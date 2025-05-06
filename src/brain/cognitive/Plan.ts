@@ -3,7 +3,7 @@ import { BaseAgent } from "../../BaseAgent";
 import { Player, PlayerEntity } from "hytopia";
 import type { AgentBehavior } from "../../BaseAgent";
 import { BaseLLM } from "../BaseLLM";
-import { buildPlanSystemPrompt, buildPlanUserMessage } from "../../config/prompts";
+import { buildPlanningPhaseSystemPrompt, buildPlanUserMessage } from "../../config/prompts";
 
 type MessageType = "Player" | "Environment" | "Agent";
 
@@ -69,7 +69,7 @@ export class Plan {
             const completeState = agent.getCompleteState();
 
             // Get recent memories
-            const recentMemories = agent.getScratchMemory().getRecentMemories();
+            const recentMemories = agent.getScratchMemory().getRecentActionMemories();
 
             // Build prompt with complete state
             const userMessage = buildPlanUserMessage(options, completeState, recentMemories);
@@ -78,7 +78,7 @@ export class Plan {
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: "system",
-                    content: buildPlanSystemPrompt(this.systemPrompt, agent)
+                    content: buildPlanningPhaseSystemPrompt(this.systemPrompt, agent)
                 },
                 {
                     role: "user",
@@ -89,7 +89,7 @@ export class Plan {
             const response = await this.llm.generate(messages);
             if (!response) return;
 
-            console.log("Response:", response);
+            console.log(`${agent.name} Response:`, response);
 
             this.parseXmlResponse(agent, response);
         } catch (error) {

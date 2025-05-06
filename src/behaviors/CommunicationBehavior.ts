@@ -261,7 +261,7 @@ Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR
     }
 
     getPromptInstructions(): string {
-        return "";
+        return ``;
     }
 
     getState(): string {
