@@ -11,7 +11,8 @@ interface SimulationMetricsReport {
     survival_time_ticks: number;
     final_fish_stock: number;
     harvest_efficiency: number; // Calculated over survived turns
-    final_harvest_gini_coefficient: number;
+    final_wealth_inequality_gini: number; // Renamed from final_harvest_gini_coefficient
+    total_wealth_generated?: number; // New field
     fish_stock_time_series: { tick: number; stock: number }[];
     total_harvest_per_cycle_time_series: { cycle: number; harvest: number }[];
     townhall_messages_per_cycle_time_series: { cycle: number; messages: number }[];
@@ -246,14 +247,21 @@ export class MetricsTracker {
             return;
         }
 
+        // Calculate total wealth generated
+        let totalWealth = 0;
+        for (const harvest of this.totalHarvestPerAgent.values()) {
+            totalWealth += harvest;
+        }
+
         const finalMetrics: SimulationMetricsReport = {
             run_id: this.runId,
-            simulation_duration_ticks: endTick - this.simulationStartTime, // Actual elapsed ticks
+            simulation_duration_ticks: this.totalSimulationDurationTicks,
             outcome: this.outcome,
             survival_time_ticks: this.calculateSurvivalTime(),
             final_fish_stock: this.lastKnownFishStock,
             harvest_efficiency: this.calculateEfficiency(),
-            final_harvest_gini_coefficient: this.calculateInequality(),
+            final_wealth_inequality_gini: this.calculateInequality(),
+            total_wealth_generated: totalWealth,
             fish_stock_time_series: this.fishStockTimeSeries,
             total_harvest_per_cycle_time_series: this.totalHarvestPerCycleTimeSeries,
             townhall_messages_per_cycle_time_series: this.townhallMessagesPerCycleTimeSeries,
