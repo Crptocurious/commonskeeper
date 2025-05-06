@@ -19,8 +19,8 @@ export interface InventoryItem {
     name: string;
     quantity: number;
     metadata?: Record<string, any>; // For things like fish weight, mineral value, etc.
-    type: string;
-    position: Vector3;
+    // type: string;
+    // position: Vector3;
 }
 
 export interface BehaviorState {

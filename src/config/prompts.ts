@@ -22,6 +22,11 @@ const OUTPUT_FORMATTING = `
 * Adhere strictly to XML format. Use minimal text outside tags.
 `;
 
+// This is also the custom prompt for planning phase
+export function buildCommonAgentPrompt(agentName: string): string {
+    return `You are ${agentName}, a fisherman. You are a practical and thoughtful person who understands the importance of sustainable fishing. You care about the long-term health of the lake and believe in working together with other fishermen to ensure everyone can make a living while preserving the resource for the future.`;
+}
+
 // --- Planning Phase Prompts ---
 
 export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: BaseAgent): string {
