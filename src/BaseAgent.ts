@@ -91,10 +91,12 @@ export class BaseAgent extends Entity {
 			if (!this.currentWorld) return;
 
 			this.currentAgentTick = this.currentWorld.currentTick;
+
+			// this.currentAgentPhase = 'DISCUSSION';
 			
 			// Update phase and track last phase
 			const previousPhase = this.currentAgentPhase;
-			if (this.currentWorld.currentPhase !== this.currentAgentPhase) {
+			if (this.currentWorld.currentPhase !== previousPhase) {
 				this.lastAgentPhase = this.currentAgentPhase;
 				this.currentAgentPhase = this.currentWorld.currentPhase;
 
@@ -102,6 +104,12 @@ export class BaseAgent extends Entity {
 				if (this.currentAgentPhase === 'PLANNING') {
 					this.handleEnvironmentTrigger("The PLANNING phase has begun. Review the situation and decide your harvest plan.");
 					this.lastActionTick = this.currentAgentTick; // Reset action timer after planning trigger
+				}
+				// Trigger discussion logic when entering the DISCUSSION phase
+				else if (this.currentAgentPhase === 'DISCUSSION') {
+					// this.handleEnvironmentTrigger("The DISCUSSION phase has begun. Let's gather at the townhall to discuss our strategies.");
+					console.log("The Communication should automatically start via behaviour updates. Nothing to do here.");
+					this.lastActionTick = this.currentAgentTick;
 				}
 			}
 
@@ -165,29 +173,30 @@ export class BaseAgent extends Entity {
 		await this.cognitiveCycle.execute(this, message);
 	}
 
-	private broadcastToNearbyAgents(message: string, sourceAgent: BaseAgent, type: 'SPEAK' | 'TOWNHALL') {
-		if (!this.world) return;
+	// Commented out because we are only allowing the communication behaviour during townhall phase.
+	// private broadcastToNearbyAgents(message: string, sourceAgent: BaseAgent, type: 'SPEAK' | 'TOWNHALL') {
+	// 	if (!this.world) return;
 
-		const range = type === 'SPEAK' ? 10 : Infinity; // Regular speak has 10m range, townhall is global
-		const nearbyAgents = this.world.entityManager
-			.getAllEntities()
-			.filter((e): e is BaseAgent => e instanceof BaseAgent && e.name !== sourceAgent.name)
-			.filter(agent => {
-				if (type === 'TOWNHALL') return true; // Include all agents during townhall
-				const agentPos = Vector3.fromVector3Like(agent.position);
-				const sourcePos = Vector3.fromVector3Like(sourceAgent.position);
-				const distance = agentPos.distance(sourcePos);
-				return distance <= range;
-			});
+	// 	const range = type === 'SPEAK' ? 10 : Infinity; // Regular speak has 10m range, townhall is global
+	// 	const nearbyAgents = this.world.entityManager
+	// 		.getAllEntities()
+	// 		.filter((e): e is BaseAgent => e instanceof BaseAgent && e.name !== sourceAgent.name)
+	// 		.filter(agent => {
+	// 			if (type === 'TOWNHALL') return true; // Include all agents during townhall
+	// 			const agentPos = Vector3.fromVector3Like(agent.position);
+	// 			const sourcePos = Vector3.fromVector3Like(sourceAgent.position);
+	// 			const distance = agentPos.distance(sourcePos);
+	// 			return distance <= range;
+	// 		});
 
-		nearbyAgents.forEach(agent => {
-			agent.cognitiveCycle.handleChat(agent, {
-				type: "Agent",
-				message,
-				agent: sourceAgent
-			});
-		});
-	}
+	// 	nearbyAgents.forEach(agent => {
+	// 		agent.cognitiveCycle.handleChat(agent, {
+	// 			type: "Agent",
+	// 			message,
+	// 			agent: sourceAgent
+	// 		});
+	// 	});
+	// }
 
 	public handleToolCall(toolName: string, args: any, player?: Player) {
 		if (!this.world) return;
@@ -199,34 +208,35 @@ export class BaseAgent extends Entity {
 		const gameWorld = this.world as GameWorld;
 
 		// Handle communication actions first
-		if (toolName === "speak" || toolName === "townhall_speak") {
-			const message = args.message;
-			if (typeof message === "string") {
-				// Set chat UI bubble
-				this.setChatUIState({ message });
+		// Commented because we are only allowing the communication behaviour during townhall phase.
+		// if (toolName === "speak" || toolName === "townhall_speak") {
+		// 	const message = args.message;
+		// 	if (typeof message === "string") {
+		// 		// Set chat UI bubble
+		// 		this.setChatUIState({ message });
 
-				// Clear message after delay
-				setTimeout(() => {
-					this.setChatUIState({ message: "" });
-				}, 5300);
+		// 		// Clear message after delay
+		// 		setTimeout(() => {
+		// 			this.setChatUIState({ message: "" });
+		// 		}, 5300);
 
-				// Broadcast based on phase
-				if (toolName === "townhall_speak") {
-					if (this.currentAgentPhase === 'DISCUSSION') {
-						this.broadcastToNearbyAgents(message, this, "TOWNHALL");
-						// Record metric only if broadcast was successful during the correct phase
-						gameWorld.metricsTracker.recordTownhallMessage();
-						results.push(`${toolName}: ${message}`);
-					} else {
-						// Inform agent they can't speak now
-						results.push(`${toolName}: Failed. You can only use townhall_speak during the DISCUSSION phase.`);
-					}
-				} else { // toolName === "speak"
-					this.broadcastToNearbyAgents(message, this, "SPEAK");
-					results.push(`${toolName}: ${message}`);
-				}
-			}
-		}
+		// 		// Broadcast based on phase
+		// 		if (toolName === "townhall_speak") {
+		// 			if (this.currentAgentPhase === 'DISCUSSION') {
+		// 				this.broadcastToNearbyAgents(message, this, "TOWNHALL");
+		// 				// Record metric only if broadcast was successful during the correct phase
+		// 				gameWorld.metricsTracker.recordTownhallMessage();
+		// 				results.push(`${toolName}: ${message}`);
+		// 			} else {
+		// 				// Inform agent they can't speak now
+		// 				results.push(`${toolName}: Failed. You can only use townhall_speak during the DISCUSSION phase.`);
+		// 			}
+		// 		} else { // toolName === "speak"
+		// 			this.broadcastToNearbyAgents(message, this, "SPEAK");
+		// 			results.push(`${toolName}: ${message}`);
+		// 		}
+		// 	}
+		// }
 
 		// Handle other behaviors
 		this.behaviors.forEach((b) => {
