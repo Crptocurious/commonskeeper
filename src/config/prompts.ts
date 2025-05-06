@@ -35,7 +35,7 @@ export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: Base
 **Current Phase: PLANNING (${constants.TIME_CONFIG.PLANNING_DURATION_MINUTES} mins)**
 * **Objective:** Decide your **intended harvest amount (N)** for the upcoming Harvest phase based on **inferred** lake health and strategic goals. You **do not know the exact current lake stock**.
 * **Available Information:** Lake Capacity, Collapse Threshold, Regeneration Rule, your total harvest so far, others' *reported* harvests from the last cycle (if available), summary of the last Discussion (if available).
-* **Your Task:** Output **ONE** \`<action type="plan_harvest">{ "amount": N }</action>\` tag (where N is the integer amount you intend to try and catch, e.g., 0-10).
+* **Your Task:** Output **ONE** \`<action type="plan_harvest">{ "amount": N }</action>\` tag (where N is the integer amount you intend to try and catch).
 * **Reasoning:** Justify N in your monologue. Estimate the current lake stock based on known rules and reported collective harvest from the previous cycle. Assess the risk of collapse based on your estimate and your planned harvest + anticipated harvest from others. Balance maximizing your potential wealth against the high risk of permanent collapse.
 * **Available Actions:** ONLY \`<action type="plan_harvest">{ "amount": N }</action>\`. After outputting the plan, you will sit idle until the next phase.
 * **Action Syntax:**
