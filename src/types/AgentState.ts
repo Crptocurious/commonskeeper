@@ -63,6 +63,7 @@ export interface AgentState {
     // memories: MemoryState[];
     lastActionTick: number;
     lastReflectionTick: number;
+    totalHarvested: number;
     internalMonologue: string[];
     nearbyEntities: NearbyEntity[];
     // scratchMemory: {

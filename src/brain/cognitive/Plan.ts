@@ -118,12 +118,9 @@ export class Plan {
                             agents: agent.world!.entityManager.getAllEntities()
                                 .filter((e): e is BaseAgent => e instanceof BaseAgent)
                                 .map((e) => {
-                                    const agentEnergy = e.energyManager.getState();
                                     return {
                                         name: e.name,
                                         lastThought: e.getLastMonologue() || "Idle",
-                                        energy: agentEnergy.currentEnergy,
-                                        maxEnergy: agentEnergy.maxEnergy,
                                         inventory: Array.from(e.inventory.values())
                                     };
                                 }),
