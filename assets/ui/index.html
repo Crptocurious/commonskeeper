@@ -248,17 +248,11 @@
     margin: 0 2px;
 }
 
-.energy-icon {
-    width: 16px;
-    height: 16px;
-}
-
 .fish-icon {
     width: 20px;
     height: 20px;
 }
 
-.agent-energy,
 .agent-inventory {
     font-size: 0.9em;
     color: #e0e0e0;
@@ -341,30 +335,12 @@ hytopia.onData((data) => {
             lakeStatusEl.textContent = `Stock: ${data.stock} / ${data.capacity}`;
         }
     }
-    else if (data.type === 'agentEnergyUpdate') {
-        // Find the agent's energy display and update it
-        const agentEntries = document.querySelectorAll('.thought-entry');
-        agentEntries.forEach(entry => {
-            const nameEl = entry.querySelector('.agent-name');
-            if (nameEl && nameEl.textContent === data.agentName) {
-                const energyEl = entry.querySelector('.agent-energy');
-                if (energyEl) {
-                    energyEl.textContent = `${Math.round(data.energy)}/${data.maxEnergy}`;
-                }
-            }
-        });
-    }
     else if (data.type === 'agentThoughts') {
         const container = document.getElementById('thoughts-container');
         if (container) { 
             // Generate HTML for all agents
             container.innerHTML = data.agents.map((agent, index) => {
                 const thoughtId = `thought-text-${index}`; // Unique ID for thought container
-                
-                // Energy Text
-                const energyText = agent.energy !== undefined && agent.maxEnergy !== undefined
-                    ? `${Math.round(agent.energy)}/${agent.maxEnergy}`
-                    : 'N/A';
                 
                 // Fish Count - Find fish in inventory array
                 let fishCount = 0;
@@ -381,8 +357,6 @@ hytopia.onData((data) => {
                 <div class="thought-entry">
                     <div class="agent-header-info"> 
                         <span class="agent-name">${agent.name}</span>
-                        <img src="{{CDN_ASSETS_URL}}/ui/icons/energy_icon.png" class="energy-icon icon" alt="E:"> 
-                        <span class="agent-energy">${Math.round(agent.energy)}/${agent.maxEnergy}</span>
                         <img src="{{CDN_ASSETS_URL}}/ui/icons/fish_icon.png" class="fish-icon icon" alt="Fish:"> 
                         <span class="agent-inventory">${fishCount}</span>
                     </div>
