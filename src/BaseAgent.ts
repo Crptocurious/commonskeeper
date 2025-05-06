@@ -15,6 +15,7 @@ import { SIMULATION_CONFIG, TIME_CONFIG } from "./config/constants";
 import type { InventoryItem, AgentState, NearbyEntity } from "./types/AgentState";
 import { CognitiveCycle } from "./brain/cognitive/CognitiveCycle";
 import { ScratchMemory } from "./brain/memory/ScratchMemory";
+import { UIService } from "./services/UIService";
 
 export interface AgentBehavior {
 	onUpdate(agent: BaseAgent, world: World): void;

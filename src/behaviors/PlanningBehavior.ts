@@ -3,6 +3,7 @@ import type { AgentBehavior, BaseAgent } from "../BaseAgent";
 import type { GameWorld } from "../types/GameState";
 import { logEvent } from "../logger";
 import { TIME_CONFIG, DERIVED_TIME_CONFIG } from "../config/constants";
+import { UIService } from "../services/UIService";
 
 /**
  * Behavior responsible for processing harvest plans made during the PLANNING phase.
@@ -12,10 +13,14 @@ export class PlanningBehavior implements AgentBehavior {
     private static lastTriggerTimes: Map<string, number> = new Map();
     // Static Map to track last monologue update time for each agent
     private static lastMonologueUpdateTimes: Map<string, number> = new Map();
+    // Static Map to track when plannedHarvestAmount was set for each agent
+    private static harvestPlanSetTimes: Map<string, number> = new Map();
     // Minimum wait time between triggers (planning phase duration / 10)
     private readonly TRIGGER_COOLDOWN = Math.floor(DERIVED_TIME_CONFIG.planningDurationTicks / 10);
     // Update monologue every 5 seconds
     private readonly MONOLOGUE_UPDATE_COOLDOWN = TIME_CONFIG.TICKS_PER_SECOND * 5;
+    // Wait 30 seconds after setting plannedHarvestAmount before showing monologue
+    private readonly INITIAL_MONOLOGUE_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 30;
 
     onUpdate(agent: BaseAgent, world: GameWorld): void {
         // Only process during PLANNING phase
@@ -41,27 +46,43 @@ export class PlanningBehavior implements AgentBehavior {
                 PlanningBehavior.lastTriggerTimes.set(agent.name, world.currentTick);
             }
         } else {
-            // Check if enough time has passed since last monologue update
-            const lastUpdateTime = PlanningBehavior.lastMonologueUpdateTimes.get(agent.name) || 0;
-            const timeSinceLastUpdate = world.currentTick - lastUpdateTime;
-            
-            // Only update if we have a valid planned amount and enough time has passed
-            if (timeSinceLastUpdate >= this.MONOLOGUE_UPDATE_COOLDOWN && 
-                typeof agent.plannedHarvestAmount === 'number' && 
-                !isNaN(agent.plannedHarvestAmount)) {
+            // Get when the harvest plan was set
+            const planSetTime = PlanningBehavior.harvestPlanSetTimes.get(agent.name) || 0;
+            const timeSincePlanSet = world.currentTick - planSetTime;
+
+            // Only start showing monologue updates after the initial delay
+            if (timeSincePlanSet >= this.INITIAL_MONOLOGUE_DELAY) {
+                // Check if enough time has passed since last monologue update
+                const lastUpdateTime = PlanningBehavior.lastMonologueUpdateTimes.get(agent.name) || 0;
+                const timeSinceLastUpdate = world.currentTick - lastUpdateTime;
                 
-                // Calculate remaining time
-                const remainingTicks = this.getRemainingTicksInPhase(world.currentTick);
-                if (remainingTicks > 0) {  // Only update if we have remaining time
-                    const remainingSeconds = Math.floor(remainingTicks / TIME_CONFIG.TICKS_PER_SECOND);
-                    const message = `I have decided to harvest ${agent.plannedHarvestAmount} fish. I will wait for ${remainingSeconds} seconds until the harvesting phase begins.`;
+                // Only update if we have a valid planned amount and enough time has passed
+                if (timeSinceLastUpdate >= this.MONOLOGUE_UPDATE_COOLDOWN && 
+                    typeof agent.plannedHarvestAmount === 'number' && 
+                    !isNaN(agent.plannedHarvestAmount)) {
                     
-                    // Only update if the message would be different (avoid unnecessary updates)
-                    const currentMonologue = agent.getLastMonologue();
-                    if (currentMonologue !== message) {
-                        agent.addInternalMonologue(message);
-                        console.log(`Updated ${agent.name}'s monologue:`, message); // Debug log
-                        PlanningBehavior.lastMonologueUpdateTimes.set(agent.name, world.currentTick);
+                    // Calculate remaining time
+                    const remainingTicks = this.getRemainingTicksInPhase(world.currentTick);
+                    if (remainingTicks > 0) {  // Only update if we have remaining time
+                        const remainingSeconds = Math.floor(remainingTicks / TIME_CONFIG.TICKS_PER_SECOND);
+                        const message = `I have decided to harvest ${agent.plannedHarvestAmount} fish. I will wait for ${remainingSeconds} seconds until the harvesting phase begins.`;
+                        
+                        // Only update if the message would be different
+                        const currentMonologue = agent.getLastMonologue();
+                        if (currentMonologue !== message) {
+                            agent.addInternalMonologue(message);
+                            
+                            // Update UI for all players
+                            const playerEntities = world.entityManager.getAllPlayerEntities();
+                            playerEntities.forEach(playerEntity => {
+                                if (playerEntity?.player) {
+                                    UIService.sendAgentThoughts(playerEntity.player, world.agents);
+                                }
+                            });
+                            
+                            // console.log(`Updated ${agent.name}'s monologue:`, message); // Debug log
+                            PlanningBehavior.lastMonologueUpdateTimes.set(agent.name, world.currentTick);
+                        }
                     }
                 }
             }
@@ -110,8 +131,9 @@ export class PlanningBehavior implements AgentBehavior {
                 return `Invalid harvest plan amount. Please provide a non-negative integer amount (e.g., { "amount": 2 }).`;
             }
 
-            // Store the plan
+            // Store the plan and record when it was set
             agent.plannedHarvestAmount = amount;
+            PlanningBehavior.harvestPlanSetTimes.set(agent.name, world.currentTick);
             console.log(`${agent.name} planned to harvest ${amount}`);
             
             logEvent({
