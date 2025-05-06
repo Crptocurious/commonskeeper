@@ -45,6 +45,7 @@ export class BaseAgent extends Entity {
 	public currentAgentPhase: GamePhase = 'PLANNING';
 	public lastAgentPhase: GamePhase | null = null;
 	public inventory: Map<string, InventoryItem> = new Map();
+	public totalHarvested: number = 0;
 	private currentLakeState: LakeState = {
 		currentStock: 0,
 		maxCapacity: 0,
@@ -255,6 +256,11 @@ export class BaseAgent extends Entity {
 		} else {
 			this.inventory.set(item.name, { ...item });
 		}
+
+		// If fish are added, update totalHarvested
+		if (item.name === "fish") {
+			this.totalHarvested += item.quantity;
+		}
 	}
 
 	public removeFromInventory(item: InventoryItem): boolean {
@@ -288,6 +294,7 @@ export class BaseAgent extends Entity {
 			behaviors: this.behaviors.map(b => ({ name: b.constructor.name, state: b.getState() })),
 			lastActionTick: this.lastActionTick,
 			lastReflectionTick: this.lastReflectionTick,
+			totalHarvested: this.totalHarvested,
 			internalMonologue: [...this.internalMonologue],
 			nearbyEntities: this.getNearbyEntities(),
 		};
