@@ -66,7 +66,7 @@ export class ScratchMemory {
         return this.actionHistory;
     }
 
-    public getRecentMemories(count: number = 5): ActionHistoryEntry[] {
+    public getRecentActionMemories(count: number = 5): ActionHistoryEntry[] {
         return this.actionHistory.entries.slice(0, count);
     }
 } 
