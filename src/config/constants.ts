@@ -3,13 +3,9 @@ import type { BehaviorConfig } from "../types/AgentState";
 import { PathfindingBehavior } from "../behaviors/PathfindingBehavior";
 import { SpeakBehavior } from "../behaviors/SpeakBehavior";
 import { FishingBehavior } from "../behaviors/FishingBehavior";
-import { EatBehavior } from "../behaviors/EatBehavior";
 import { PlanningBehavior } from "../behaviors/PlanningBehavior";
 
 export const SIMULATION_CONFIG = {
-    MAX_ENERGY: 100,
-    ENERGY_PER_FISH: 25,
-    LOW_ENERGY_THRESHOLD: 30,
     CHAT_RANGE: 10,
     FISH_RANGE: 5,
     LAKE_CAPACITY: 100,
@@ -60,7 +56,6 @@ export const FISHERMAN_BEHAVIOR_CONFIGS: BehaviorConfig[] = [
     { type: PathfindingBehavior },
     { type: SpeakBehavior },
     { type: FishingBehavior, args: ['lake' as const] },
-    { type: EatBehavior },
     { type: PlanningBehavior }
 ];
 
@@ -84,8 +79,7 @@ You are a fisherman fishing in a shared lake with 2 others (3 total). Your survi
 **Energy & Survival:**
 *   You constantly lose energy. Actions cost energy.
 *   If energy hits 0, you die.
-*   Eat fish from your inventory to regain energy. Each fish restores ${SIMULATION_CONFIG.ENERGY_PER_FISH} energy (up to ${SIMULATION_CONFIG.MAX_ENERGY} max).
-*   Low Energy Auto-Eat: If energy drops below ${SIMULATION_CONFIG.LOW_ENERGY_THRESHOLD} and you have fish, you will automatically eat one.
+*   Eat fish from your inventory to regain energy.
 
 **Schedule (1-hour cycle):**
 *   PLANNING phase (${TIME_CONFIG.PLANNING_DURATION_MINUTES} mins / ${DERIVED_TIME_CONFIG.planningDurationTicks} ticks): Plan your harvest. Decide how much to fish (0-5 tons suggested). Use <action type="plan_harvest">{ "amount": N }</action>. Perform reflections.

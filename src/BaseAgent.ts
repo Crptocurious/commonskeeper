@@ -11,7 +11,6 @@ import {
 } from "hytopia";
 import type { GamePhase, GameState, GameWorld, LakeState } from "./types/GameState";
 
-import { EnergyManager } from "./EnergyManager";
 import { SIMULATION_CONFIG, TIME_CONFIG } from "./config/constants";
 import type { InventoryItem, AgentState, NearbyEntity } from "./types/AgentState";
 import { CognitiveCycle } from "./brain/cognitive/CognitiveCycle";
@@ -38,8 +37,6 @@ export interface CompleteState {
 export class BaseAgent extends Entity {
 	private behaviors: AgentBehavior[] = [];
 	private chatUI: SceneUI;
-	public energyManager: EnergyManager;
-	public isDead: boolean = false;
 	private internalMonologue: string[] = [];
 	private currentWorld?: GameWorld;
 	private scratchMemory: ScratchMemory;
@@ -78,8 +75,6 @@ export class BaseAgent extends Entity {
 		this.scratchMemory = new ScratchMemory(this.name);
 		this.cognitiveCycle = new CognitiveCycle(options.systemPrompt);
 		
-		this.energyManager = new EnergyManager(SIMULATION_CONFIG.MAX_ENERGY, SIMULATION_CONFIG.MAX_ENERGY / (TIME_CONFIG.TICKS_PER_MINUTE * 60), this);
-
 		this.chatUI = new SceneUI({
 			templateId: "agent-chat",
 			attachedToEntity: this,
@@ -127,8 +122,6 @@ export class BaseAgent extends Entity {
 			this.behaviors.forEach(behavior => {
 				behavior.onUpdate(this, this.currentWorld!);
 			});
-
-			this.energyManager.decay(this.currentAgentTick);
 		});
 	}
 
@@ -288,37 +281,31 @@ export class BaseAgent extends Entity {
 	}
 
 	public getCompleteState(): CompleteState {
-        return {
-            agent: {
-                name: this.name,
-                position: this.position,
-                energy: this.energyManager.getState(),
-                inventory: Array.from(this.inventory.entries()).map(([name, item]) => ({
-                    name,
-                    quantity: item.quantity,
-                    metadata: item.metadata
-                })),
-				behaviors: this.behaviors.map(b => ({
-					name: b.constructor.name,
-					state: b.getState()
-				})),
-                lastActionTick: this.lastActionTick,
-                lastReflectionTick: this.lastReflectionTick,
-				isDead: this.isDead,
-				internalMonologue: this.internalMonologue,
-				nearbyEntities: this.getNearbyEntities(),
-				// scratchMemory: this.getScratchMemory()
-            },
-            game: {
-                lake: this.currentLakeState,
-                phase: {
-                    currentPhase: this.currentAgentPhase,
-                    lastPhase: this.lastAgentPhase,
-                    phaseStartTick: this.currentAgentTick
-                },
-                lastUpdateTick: this.currentAgentTick
-            }
-        };
+		const agentState: AgentState = {
+			name: this.name,
+			position: this.position ? { x: this.position.x, y: this.position.y, z: this.position.z } : undefined,
+			inventory: Array.from(this.inventory.values()),
+			behaviors: this.behaviors.map(b => ({ name: b.constructor.name, state: b.getState() })),
+			lastActionTick: this.lastActionTick,
+			lastReflectionTick: this.lastReflectionTick,
+			internalMonologue: [...this.internalMonologue],
+			nearbyEntities: this.getNearbyEntities(),
+		};
+
+		const gameState: GameState = {
+			lake: this.currentLakeState,
+			phase: {
+				currentPhase: this.currentAgentPhase,
+				lastPhase: this.lastAgentPhase,
+				phaseStartTick: this.currentAgentTick
+			},
+			lastUpdateTick: this.currentAgentTick
+		};
+
+		return {
+			agent: agentState,
+			game: gameState
+		};
 	}
 
 	public getNearbyEntities(radius: number = 10): NearbyEntity[] {

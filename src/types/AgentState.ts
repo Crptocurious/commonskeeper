@@ -15,17 +15,12 @@ export interface BehaviorConfig {
     args?: (keyof GameContext)[];
 }
 
-export interface EnergyState {
-    currentEnergy: number;
-    maxEnergy: number;
-    isDepleted: boolean;
-    lastUpdateTick: number;
-}
-
 export interface InventoryItem {
     name: string;
     quantity: number;
     metadata?: Record<string, any>; // For things like fish weight, mineral value, etc.
+    type: string;
+    position: Vector3;
 }
 
 export interface BehaviorState {
@@ -62,14 +57,12 @@ export interface NearbyEntity {
 export interface AgentState {
     name: string;
     position?: { x: number; y: number; z: number };
-    energy: EnergyState;
     inventory: InventoryItem[];
     behaviors: BehaviorState[];
     // communication: CommunicationHistory;
     // memories: MemoryState[];
     lastActionTick: number;
     lastReflectionTick: number;
-    isDead: boolean;
     internalMonologue: string[];
     nearbyEntities: NearbyEntity[];
     // scratchMemory: {
