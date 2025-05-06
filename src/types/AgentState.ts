@@ -2,6 +2,7 @@ import type { Lake } from "../Lake";
 import type { GameContext, GamePhase } from "./GameState";
 import { Vector3 } from "hytopia";
 import type { CompleteState } from "../BaseAgent";
+import type { FishingState } from "../behaviors/FishingBehavior";
 
 export interface AgentConfig {
     name: string;
@@ -66,6 +67,7 @@ export interface AgentState {
     totalHarvested: number;
     internalMonologue: string[];
     nearbyEntities: NearbyEntity[];
+    fishingState?: FishingState;
     // scratchMemory: {
     //     getRecentActionMemories(count?: number): ActionHistoryEntry[];
     // }

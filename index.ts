@@ -136,7 +136,12 @@ startServer((world: World) => {
         });
         
         config.behaviorConfigs.forEach(behaviorConfig => {
-            const behavior = new behaviorConfig.type(...(behaviorConfig.args || []));
+            // Map string arguments to actual instances
+            const resolvedArgs = (behaviorConfig.args || []).map(arg => {
+                if (arg === 'lake') return lake;
+                return arg;
+            });
+            const behavior = new behaviorConfig.type(...resolvedArgs);
             agent.addBehavior(behavior);
         });
         
