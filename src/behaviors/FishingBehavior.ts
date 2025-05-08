@@ -75,8 +75,9 @@ export class FishingBehavior implements AgentBehavior {
 	onUpdate(agent: BaseAgent, world: GameWorld): void {
 		const currentState = this.getOrInitializeFishingState(agent);
 
-		// Reset state only once when transitioning from harvesting to discussion
-		if (agent.currentAgentPhase !== 'HARVESTING' && agent.lastAgentPhase === 'HARVESTING' && !FishingBehavior.hasResetState) {
+		// Reset state when transitioning from harvesting to discussion OR at the start of a new cycle
+		if ((agent.currentAgentPhase !== 'HARVESTING' && agent.lastAgentPhase === 'HARVESTING' && !FishingBehavior.hasResetState) ||
+			(world.currentTick === 0 && agent.currentAgentPhase === 'PLANNING')) {
 			this.syncSharedState(world, {
 				currentFishingAgent: null,
 				fishingQueue: [],

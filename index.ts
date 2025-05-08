@@ -73,7 +73,7 @@ startServer((world: World) => {
             if (!metricsTracker.isReportGenerated()) { // Ensure report is generated only once
                  metricsTracker.simulationEnded(totalElapsedTicks, lake);
             }
-            console.log(`Simulation ended. Reason: ${lake.isCollapsed() ? 'Lake Collapsed' : 'Time Limit Reached'} at tick ${totalElapsedTicks}`);
+            console.log(`Simulation ended. Reason: ${lake.isCollapsed() ? 'Lake Collapsed' : 'Time Limit Reached'} at Current Tick: ${gameWorld.currentTick}, Total Ticks: ${totalElapsedTicks}`);
             return; // Stop further processing
         }
 
@@ -102,6 +102,14 @@ startServer((world: World) => {
             gameWorld.currentCycle++; // Increment cycle number
             gameWorld.currentTick = 0; // Reset tick counter for new cycle
             console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
+            
+            // Reset agent ticks and fishing-related states for the new cycle
+            gameWorld.agents.forEach(agent => {
+                agent.currentAgentTick = 0;
+                agent.plannedHarvestAmount = null; // Reset planned harvest amount
+                agent.lastActionTick = 0; // Reset last action tick
+                agent.lastReflectionTick = 0; // Reset last reflection tick
+            });
         }
 
         // Phase Change Logic
@@ -109,7 +117,7 @@ startServer((world: World) => {
             const oldPhase = gameWorld.currentPhase;
             gameWorld.currentPhase = newPhase;
             UIService.sendPhaseUpdate(gameWorld);
-            console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Tick ${totalElapsedTicks}: Phase Change: ${oldPhase} -> ${newPhase} ---`);
+            console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Current Tick: ${gameWorld.currentTick}, Total Ticks: ${totalElapsedTicks}: Phase Change: ${oldPhase} -> ${newPhase} ---`);
 
             // Record fish stock at the end of HARVESTING and DISCUSSION phases
             if (oldPhase === 'HARVESTING' || oldPhase === 'DISCUSSION') {
@@ -121,7 +129,7 @@ startServer((world: World) => {
                 const regeneratedAmount = lake.regenerate(totalElapsedTicks, gameWorld);
                 metricsTracker.recordLakeRegeneration(regeneratedAmount); 
                 UIService.sendLakeStatusUpdate(gameWorld, lake); // Update UI after regeneration
-                console.log(`--- Lake Regenerated: ${regeneratedAmount.toFixed(2)} ---`);
+                console.log(`--- Lake Regenerated: ${regeneratedAmount.toFixed(2)} at Current Tick: ${gameWorld.currentTick}, Total Ticks: ${totalElapsedTicks} ---`);
             }
         }
 

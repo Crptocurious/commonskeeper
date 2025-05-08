@@ -57,7 +57,7 @@ export class BaseAgent extends Entity {
 	};
 	public plannedHarvestAmount: number | null = null;
 	
-	private lastActionTick: number = 0;
+	public lastActionTick: number = 0;
 	public lastReflectionTick: number = 0;
 	private readonly INACTIVITY_THRESHOLD_TICKS = TIME_CONFIG.TICKS_PER_SECOND * 30; // 30 seconds worth of ticks
 
@@ -91,9 +91,8 @@ export class BaseAgent extends Entity {
 		this.on(EntityEvent.TICK, () => {
 			if (!this.currentWorld) return;
 
+			// Synchronize agent tick with world tick
 			this.currentAgentTick = this.currentWorld.currentTick;
-
-			// this.currentAgentPhase = 'DISCUSSION';
 			
 			// Update phase and track last phase
 			const previousPhase = this.currentAgentPhase;
