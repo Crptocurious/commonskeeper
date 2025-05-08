@@ -11,7 +11,7 @@ export const SIMULATION_CONFIG = {
     CHAT_RANGE: 10,
     FISH_RANGE: 5,
     LAKE_CAPACITY: 1000,
-    LAKE_INITIAL_STOCK: 500,
+    LAKE_INITIAL_STOCK: 1000,
     LAKE_COLLAPSE_THRESHOLD: 10
 };
 
@@ -58,7 +58,7 @@ export const enum AgentName {
 }
 
 export const SPAWN_LOCATIONS = {
-    player: { x: 0, y: 10, z: 0 },
+    player: { x: 29, y: 3, z: 59 },
     agents: {
         [AgentName.JOHN]: { x: 30, y: 3, z: 55 },
         [AgentName.KATE]: { x: 33, y: 3, z: 56 },
