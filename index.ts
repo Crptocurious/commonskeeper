@@ -31,6 +31,7 @@ startServer((world: World) => {
     const gameWorld = world as GameWorld;
     gameWorld.currentTick = 0;
     gameWorld.currentPhase = 'PLANNING';
+    gameWorld.currentCycle = 0; // Initialize cycle number
     gameWorld.agents = []; // Initialize agents array on gameWorld
     let totalElapsedTicks = 0; // Track total ticks for simulation end
 
@@ -93,11 +94,14 @@ startServer((world: World) => {
             newPhase = 'DISCUSSION';
         }
 
-        // Detect cycle end (transition from Discussion back to Planning implicitly handles this via modulo)
+        // Detect cycle end (transition from Discussion back to Planning)
         const justCompletedCycle = gameWorld.currentTick > 0 && gameWorld.currentTick % totalCycleTicks === 0;
         if (justCompletedCycle) {
-             // Log end of cycle metrics *before* potential phase change / regeneration
+            // Log end of cycle metrics *before* potential phase change / regeneration
             metricsTracker.cycleEnded(totalElapsedTicks);
+            gameWorld.currentCycle++; // Increment cycle number
+            gameWorld.currentTick = 0; // Reset tick counter for new cycle
+            console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
         }
 
         // Phase Change Logic
