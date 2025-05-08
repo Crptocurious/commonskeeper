@@ -52,9 +52,16 @@ startServer((world: World) => {
     lake.on(EVENT_COLLAPSE, () => {
         console.log("EVENT LISTENER: Lake collapse detected!");
         metricsTracker.lakeCollapsed(totalElapsedTicks, lake.getCurrentStock());
-        // Optionally stop the simulation on collapse
-        // clearInterval(simulationInterval);
-        // metricsTracker.simulationEnded(totalElapsedTicks, lake); 
+        
+        // Stop the simulation immediately
+        clearInterval(simulationInterval);
+        
+        // Ensure final metrics are recorded
+        if (!metricsTracker.isReportGenerated()) {
+            metricsTracker.simulationEnded(totalElapsedTicks, lake);
+        }
+        
+        console.log(`Simulation ended due to lake collapse at tick ${totalElapsedTicks}`);
     });
 
     // Set up the global tick interval

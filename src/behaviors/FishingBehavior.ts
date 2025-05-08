@@ -344,6 +344,11 @@ export class FishingBehavior implements AgentBehavior {
 					console.log(`[FISHING] ${agent.name}'s fishing attempt was unsuccessful`);
 				}
 
+				// Check for lake collapse after the harvest is complete
+				if (world.lake) {
+					world.lake.checkCollapse(world.currentTick);
+				}
+
 				// Update shared state to allow next agent to fish
 				this.syncSharedState(world, {
 					currentFishingAgent: null,
