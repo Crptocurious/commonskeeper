@@ -45,6 +45,7 @@ export class FishingBehavior implements AgentBehavior {
 		fishingQueue: [],
 		lastFishingEndTime: 0
 	};
+	private static hasResetState: boolean = false; // Add flag to track if we've reset state
 	private readonly THOUGHT_UPDATE_INTERVAL = TIME_CONFIG.TICKS_PER_SECOND * 10; // Update every 10 seconds
 	private readonly MIN_FISHING_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 1; // 1 second minimum delay between fishing attempts
 
@@ -74,8 +75,8 @@ export class FishingBehavior implements AgentBehavior {
 	onUpdate(agent: BaseAgent, world: GameWorld): void {
 		const currentState = this.getOrInitializeFishingState(agent);
 
-		// Reset state when phase changes
-		if (agent.currentAgentPhase !== 'HARVESTING' && agent.lastAgentPhase === 'HARVESTING') {
+		// Reset state only once when transitioning from harvesting to discussion
+		if (agent.currentAgentPhase !== 'HARVESTING' && agent.lastAgentPhase === 'HARVESTING' && !FishingBehavior.hasResetState) {
 			this.syncSharedState(world, {
 				currentFishingAgent: null,
 				fishingQueue: [],
@@ -88,7 +89,13 @@ export class FishingBehavior implements AgentBehavior {
 				isFishing: false,
 				harvestingCompleted: false
 			});
+			FishingBehavior.hasResetState = true; // Set flag to indicate we've reset
 			return;
+		}
+
+		// Reset the flag when entering harvesting phase
+		if (agent.currentAgentPhase === 'HARVESTING') {
+			FishingBehavior.hasResetState = false;
 		}
 
 		// If in HARVESTING phase, manage fishing queue and update thoughts
