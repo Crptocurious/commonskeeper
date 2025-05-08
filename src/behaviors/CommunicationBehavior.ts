@@ -4,6 +4,7 @@ import type { ChatHistoryEntry, TownhallHistory } from "../brain/memory/ScratchM
 import { logEvent } from "../logger";
 import { BaseLLM } from "../brain/BaseLLM";
 import { UIService } from "../services/UIService";
+import { COMMUNICATION_CONFIG } from "../config/constants";
 
 export class CommunicationBehavior implements AgentBehavior {
     private llm: BaseLLM;
@@ -62,7 +63,7 @@ export class CommunicationBehavior implements AgentBehavior {
         if (currentAgent && currentAgent.name === agent.name) {
             // Check if enough time has passed since last update
             const timeSinceLastUpdate = agent.currentAgentTick - townhallHistory.lastUpdateTick;
-            if (timeSinceLastUpdate < 10) { // Add a small delay between turns
+            if (timeSinceLastUpdate < COMMUNICATION_CONFIG.TURN_DELAY_TICKS) { // Use the configured delay
                 return;
             }
 
@@ -188,11 +189,14 @@ Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR
             tick: agent.currentAgentTick
         });
 
+        // Add the thought to agent's monologue
+        agent.addInternalMonologue(thought);
+
         // Update UI with the thought
         const playerEntities = world.entityManager.getAllPlayerEntities();
         playerEntities.forEach(playerEntity => {
             if (playerEntity?.player) {
-                UIService.sendAgentThoughts(playerEntity.player, [agent]);
+                UIService.sendAgentThoughts(playerEntity.player, world.agents);
             }
         });
 
@@ -225,6 +229,13 @@ Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR
             // Clear chat bubble after delay
             setTimeout(() => {
                 agent.setChatUIState({ message: "" });
+                // Update UI one final time after chat bubble clears
+                const playerEntities = world.entityManager.getAllPlayerEntities();
+                playerEntities.forEach(playerEntity => {
+                    if (playerEntity?.player) {
+                        UIService.sendAgentThoughts(playerEntity.player, world.agents);
+                    }
+                });
             }, 5300);
         }
 

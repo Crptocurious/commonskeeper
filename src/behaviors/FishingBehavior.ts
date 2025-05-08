@@ -68,7 +68,7 @@ export class FishingBehavior implements AgentBehavior {
 			...FishingBehavior.sharedFishingState,
 			...updates
 		};
-		console.log(`[FISHING] Shared State Update - Current: ${FishingBehavior.sharedFishingState.currentFishingAgent}, Queue: [${FishingBehavior.sharedFishingState.fishingQueue.join(', ')}]`);
+		// console.log(`[FISHING] Shared State Update - Current: ${FishingBehavior.sharedFishingState.currentFishingAgent}, Queue: [${FishingBehavior.sharedFishingState.fishingQueue.join(', ')}]`);
 	}
 
 	onUpdate(agent: BaseAgent, world: GameWorld): void {
@@ -324,6 +324,15 @@ export class FishingBehavior implements AgentBehavior {
 						quantity: result.harvestedAmount,
 						metadata: {},
 					});
+
+					// --- FIX: Update UI after inventory is updated ---
+					const playerEntities = world.entityManager.getAllPlayerEntities();
+					playerEntities.forEach(playerEntity => {
+						if (playerEntity?.player) {
+							UIService.sendAgentThoughts(playerEntity.player, world.agents);
+						}
+					});
+					// --- END FIX ---
 
 					// Check if agent has reached their planned amount
 					const newTotal = this.getCurrentHarvestAmount(state, agent.name);
