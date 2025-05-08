@@ -13,6 +13,7 @@ export interface PhaseChangeEvent {
 export interface GameWorld extends World {
     currentTick: number;
     currentPhase: GamePhase;
+    currentCycle: number;
     lake: Lake;
     agents: BaseAgent[];
     metricsTracker: MetricsTracker;
