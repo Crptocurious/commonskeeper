@@ -12,6 +12,7 @@ export class Lake extends EventEmitter {
   private _isCollapsed: boolean = false; // Persistent collapse state
   private readonly COLLAPSE_THRESHOLD_PERCENT = SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD / 100 ;
   private lastUpdateTick: number;
+  readonly intrinsicGrowthRate: number = 0.05; // Logistic growth r value
 
   /**
    * Initializes the Lake resource.
@@ -72,28 +73,48 @@ export class Lake extends EventEmitter {
     }
 
     const stockBefore = this.currentStock;
-    let stockAfter = stockBefore; // Initialize with before value
-    let regeneratedAmount = 0; // Initialize regenerated amount
+    let regeneratedAmount = 0; // Initialize regeneratedAmount
 
-    // Doubling rule
-    if (this.currentStock > 0 && this.currentStock < this.capacity) {
-        stockAfter = this.currentStock * 2;
-        // Ensure stock does not exceed capacity after regeneration
+    // Logistic growth rule
+    if (this.currentStock > 0) { // Only grow if there's stock
+        const r = this.intrinsicGrowthRate; // Use class member
+        const newFish = r * this.currentStock * (1 - this.currentStock / this.capacity);
+        
+        // Ensure stock does not exceed capacity and handle potential negative growth if stock > capacity (though unlikely with current logic)
+        let stockAfter = this.currentStock + newFish;
         if (stockAfter > this.capacity) {
             stockAfter = this.capacity;
+        } else if (stockAfter < 0) { // Should not happen if currentStock starts <= capacity
+            stockAfter = 0;
         }
+        
         this.currentStock = stockAfter;
-        this.lastUpdateTick = currentTick;
-        regeneratedAmount = stockAfter - stockBefore; // Calculate the regenerated amount
-    }
-    // Else: stock is 0 or at capacity, no change from doubling rule
+        regeneratedAmount = this.currentStock - stockBefore; // Calculate the actual change in stock
 
-    // Log the regeneration event if stock changed
-    if (stockAfter !== stockBefore) {
+        // Ensure regeneratedAmount is not negative if stock decreased due to being over capacity initially
+        // or due to other edge cases, though with current logic it should mostly be positive or zero.
+        if (regeneratedAmount < 0 && stockBefore > this.capacity) {
+            // This case implies stock was above capacity and is now adjusted down.
+            // For "regeneration" metrics, we might consider this 0 regeneration.
+             regeneratedAmount = 0;
+        } else if (regeneratedAmount < 0) {
+            // If stock decreased for other reasons (e.g. float precision, or became 0)
+            regeneratedAmount = 0; 
+        }
+
+
+        this.lastUpdateTick = currentTick;
+    }
+    // Else: stock is 0, no growth possible.
+
+    // Log the regeneration event if stock changed (or if we want to log every attempt)
+    // We only log if there was a meaningful change or attempt.
+    if (regeneratedAmount > 0 || (stockBefore > 0 && this.currentStock !== stockBefore) ) {
         logEvent({
             type: "lake_regenerate",
             stockBefore: stockBefore,
-            stockAfter: stockAfter,
+            stockAfter: this.currentStock, // Use the final this.currentStock
+            regeneratedAmountCalculated: regeneratedAmount, // Log the calculated amount for clarity
             capacity: this.capacity,
             isCollapsed: this._isCollapsed, // Should always be false here
             lastUpdateTick: this.lastUpdateTick
@@ -104,7 +125,7 @@ export class Lake extends EventEmitter {
         this.emit('lakeUpdated', world, this);
     }
     
-    return regeneratedAmount; // Return the calculated amount
+    return regeneratedAmount > 0 ? regeneratedAmount : 0; // Return the calculated positive amount or 0
   }
 
   /**
@@ -191,8 +212,9 @@ export class Lake extends EventEmitter {
       maxCapacity: this.capacity,
       lastUpdateTick: this.lastUpdateTick,
       isCollapsed: this._isCollapsed,
-      regenRate: this.regenRate,
-      collapseThreshold: this.COLLAPSE_THRESHOLD_PERCENT
+      regenRate: this.intrinsicGrowthRate, // Use the logistic growth rate
+      collapseThreshold: this.COLLAPSE_THRESHOLD_PERCENT,
+      regenModel: "logistic" // Add the regeneration model
     };
   }
 
