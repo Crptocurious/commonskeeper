@@ -1,0 +1,56 @@
+{
+  "run_id": "sim_2025-05-09T07-26-44-056Z",
+  "simulation_duration_ticks": 108000,
+  "outcome": "Collapsed",
+  "survival_time_ticks": 25506,
+  "final_fish_stock": 0,
+  "harvest_efficiency": 68.68686868686869,
+  "final_wealth_inequality_gini": 0.23529411764705882,
+  "total_wealth_generated": 850,
+  "fish_stock_time_series": [
+    {
+      "tick": 0,
+      "stock": 1000
+    },
+    {
+      "tick": 7200,
+      "stock": 550
+    },
+    {
+      "tick": 10800,
+      "stock": 550
+    },
+    {
+      "tick": 18000,
+      "stock": 162.375
+    },
+    {
+      "tick": 21600,
+      "stock": 162.375
+    },
+    {
+      "tick": 25506,
+      "stock": 0
+    }
+  ],
+  "total_harvest_per_cycle_time_series": [
+    {
+      "cycle": 0,
+      "harvest": 450
+    },
+    {
+      "cycle": 1,
+      "harvest": 400
+    }
+  ],
+  "townhall_messages_per_cycle_time_series": [
+    {
+      "cycle": 0,
+      "messages": 0
+    },
+    {
+      "cycle": 1,
+      "messages": 0
+    }
+  ]
+}

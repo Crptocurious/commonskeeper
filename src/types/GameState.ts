@@ -30,6 +30,7 @@ export interface LakeState {
     isCollapsed: boolean;
     regenRate: number;
     collapseThreshold: number;  // As a percentage of maxCapacity
+    regenModel?: string; // optional, but helps the HUD
 }
 
 export interface PhaseState {
