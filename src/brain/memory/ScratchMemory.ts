@@ -34,9 +34,8 @@ export class ScratchMemory {
             lastUpdateTick: 0
         };
         this.fishingMemory = {
-            currentFishingAgent: null,
-            fishingQueue: [],
             harvestAmounts: new Map(),
+            totalHarvestAmounts: new Map(),
             isFishing: false,
             harvestingCompleted: false
         };
