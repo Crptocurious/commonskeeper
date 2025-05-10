@@ -2,7 +2,7 @@ import { Vector3} from "hytopia";
 import { BaseAgent, type AgentBehavior } from "../BaseAgent";
 import { Lake } from "../Lake";
 import { logEvent } from "../logger";
-import { LOCATIONS, SIMULATION_CONFIG, TIME_CONFIG } from "../config/constants";
+import { LOCATIONS, SIMULATION_CONFIG, TIME_CONFIG, DERIVED_TIME_CONFIG } from "../config/constants";
 import type { GameWorld } from "../types/GameState";
 import { buildFishingPrompt } from "../config/prompts";
 import { UIService } from "../services/UIService";
@@ -13,9 +13,8 @@ interface FishResult {
 }
 
 export interface FishingState {
-	currentFishingAgent: string | null;
-	fishingQueue: string[];
-	harvestAmounts: Map<string, number>;
+	harvestAmounts: Map<string, number>;  // Per-cycle harvest amounts
+	totalHarvestAmounts: Map<string, number>;  // Total harvest amounts across all cycles
 	isFishing: boolean;
 	harvestingCompleted: boolean;
 }
@@ -25,27 +24,22 @@ export interface FishingState {
  * It uses the Lake class to simulate a realistic fishing environment
  * with capacity, regeneration, and potential collapse.
  * 
- * Only one agent can fish at a time, and agents will stop fishing once
- * they've reached their planned harvest amount.
+ * Agents fish in a fixed, randomized sequence that rotates through all agents.
+ * This creates patterns like ABC, BCA, CAB and so on.
  */
 export class FishingBehavior implements AgentBehavior {
 	private readonly PIER_LOCATION = new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z);
 	private readonly FISHING_RANGE = SIMULATION_CONFIG.FISH_RANGE;
 	private lakeManager: Lake;
-	private isFishing: boolean = false;
+	private static isFishing: boolean = false;  // Make this static to track across all instances
 	
-	// Static Maps to track shared state across all instances
+	// Static state to track fishing sequence and current agent
+	private static baseSequence: string[] = [];  // Store the original sequence
+	private static currentFishingIndex: number = 0;
+	private static lastFishingEndTime: number = 0;
+	private static hasInitializedSequence: boolean = false;
 	private static lastThoughtUpdateTimes: Map<string, number> = new Map();
-	private static sharedFishingState: {
-		currentFishingAgent: string | null;
-		fishingQueue: string[];
-		lastFishingEndTime: number;
-	} = {
-		currentFishingAgent: null,
-		fishingQueue: [],
-		lastFishingEndTime: 0
-	};
-	private static hasResetState: boolean = false; // Add flag to track if we've reset state
+
 	private readonly THOUGHT_UPDATE_INTERVAL = TIME_CONFIG.TICKS_PER_SECOND * 10; // Update every 10 seconds
 	private readonly MIN_FISHING_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 1; // 1 second minimum delay between fishing attempts
 
@@ -64,91 +58,145 @@ export class FishingBehavior implements AgentBehavior {
 		return memory.getFishingMemory();
 	}
 
-	private syncSharedState(world: GameWorld, updates: Partial<typeof FishingBehavior.sharedFishingState>) {
-		FishingBehavior.sharedFishingState = {
-			...FishingBehavior.sharedFishingState,
-			...updates
-		};
-		// console.log(`[FISHING] Shared State Update - Current: ${FishingBehavior.sharedFishingState.currentFishingAgent}, Queue: [${FishingBehavior.sharedFishingState.fishingQueue.join(', ')}]`);
+	private getCurrentCycleSequence(world: GameWorld): string[] {
+		// Calculate the sequence for the current cycle
+		return FishingBehavior.baseSequence.map((_, i) => {
+			const effectiveIndex = (i + world.currentCycle) % FishingBehavior.baseSequence.length;
+			const agent = FishingBehavior.baseSequence[effectiveIndex];
+			if (!agent) {
+				throw new Error('Unexpected undefined agent in base sequence');
+			}
+			return agent;
+		});
+	}
+
+	private initializeFishingSequence(world: GameWorld) {
+		if (!FishingBehavior.hasInitializedSequence) {
+			// Get all agents and ensure they have names
+			const agents = world.agents
+				.map(agent => agent.name)
+				.filter((name): name is string => name !== undefined);
+
+			if (agents.length === 0) {
+				console.warn('[FISHING] No agents found to initialize fishing sequence');
+				return;
+			}
+
+			// Create a copy of the array to shuffle
+			const shuffledAgents = [...agents];
+			
+			// Shuffle the array using Fisher-Yates algorithm
+			for (let i = shuffledAgents.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				const temp = shuffledAgents[i] as string;
+				shuffledAgents[i] = shuffledAgents[j] as string;
+				shuffledAgents[j] = temp;
+			}
+			
+			FishingBehavior.baseSequence = shuffledAgents;
+			FishingBehavior.currentFishingIndex = 0;
+			FishingBehavior.hasInitializedSequence = true;
+			console.log(`[FISHING] Initialized base sequence: [${FishingBehavior.baseSequence.join(', ')}]`);
+			console.log(`[FISHING] Cycle 0 sequence will be: [${this.getCurrentCycleSequence(world).join(', ')}]`);
+		}
+	}
+
+	private getCurrentFishingAgent(world: GameWorld): string | null {
+		if (FishingBehavior.baseSequence.length === 0) return null;
+		
+		// Calculate effective index based on current fishing index and cycle rotation
+		const effectiveIndex = (FishingBehavior.currentFishingIndex + world.currentCycle) % FishingBehavior.baseSequence.length;
+		return FishingBehavior.baseSequence[effectiveIndex] || null;
+	}
+
+	private moveToNextAgent(world: GameWorld) {
+		// Just increment the index, the getCurrentFishingAgent will handle the rotation
+		FishingBehavior.currentFishingIndex = (FishingBehavior.currentFishingIndex + 1) % FishingBehavior.baseSequence.length;
+		console.log(`[FISHING] Moving to next agent. Current position: ${FishingBehavior.currentFishingIndex}, Current agent: ${this.getCurrentFishingAgent(world)}`);
+	}
+
+	private checkAllAgentsCompletedHarvesting(world: GameWorld): boolean {
+		return world.agents.every(agent => {
+			const state = this.getOrInitializeFishingState(agent);
+			return state.harvestingCompleted;
+		});
+	}
+
+	private resetPerCycleFishingState(agent: BaseAgent, world: GameWorld) {
+		const memory = agent.getScratchMemory();
+		const fishingMemory = memory.getFishingMemory();
+		this.updateFishingState(agent, world, {
+			...fishingMemory,
+			harvestAmounts: new Map(),  // Reset per-cycle amounts
+			harvestingCompleted: false,
+			totalHarvestAmounts: fishingMemory.totalHarvestAmounts  // Preserve total amounts
+		});
 	}
 
 	onUpdate(agent: BaseAgent, world: GameWorld): void {
 		const currentState = this.getOrInitializeFishingState(agent);
 
-		// Reset state when transitioning from harvesting to discussion OR at the start of a new cycle
-		if ((agent.currentAgentPhase !== 'HARVESTING' && agent.lastAgentPhase === 'HARVESTING' && !FishingBehavior.hasResetState) ||
-			(world.currentTick === 0 && agent.currentAgentPhase === 'PLANNING')) {
-			this.syncSharedState(world, {
-				currentFishingAgent: null,
-				fishingQueue: [],
-				lastFishingEndTime: world.currentTick
-			});
+		// Initialize fishing sequence only if it hasn't been initialized yet
+		if (!FishingBehavior.hasInitializedSequence) {
+			this.initializeFishingSequence(world);
 			this.updateFishingState(agent, world, {
-				currentFishingAgent: null,
-				fishingQueue: [],
 				harvestAmounts: new Map(),
+				totalHarvestAmounts: new Map(),
 				isFishing: false,
 				harvestingCompleted: false
 			});
-			FishingBehavior.hasResetState = true; // Set flag to indicate we've reset
 			return;
 		}
 
-		// Reset the flag when entering harvesting phase
-		if (agent.currentAgentPhase === 'HARVESTING') {
-			FishingBehavior.hasResetState = false;
+		// Reset states at the start of each cycle
+		if (world.currentTick === 0) {
+			FishingBehavior.currentFishingIndex = 0;  // Reset to start of sequence
+			// Reset harvest completion status for all agents
+			world.agents.forEach(agent => {
+				this.resetPerCycleFishingState(agent, world);
+			});
+			const nextCycleSequence = this.getCurrentCycleSequence(world);
+			console.log(`[FISHING] Starting cycle ${world.currentCycle}`);
+			console.log(`[FISHING] Base sequence: [${FishingBehavior.baseSequence.join(', ')}]`);
+			console.log(`[FISHING] This cycle's sequence: [${nextCycleSequence.join(', ')}]`);
+			console.log(`[FISHING] First agent to fish will be: ${this.getCurrentFishingAgent(world)}`);
 		}
 
-		// If in HARVESTING phase, manage fishing queue and update thoughts
+		// If in HARVESTING phase, manage fishing and update thoughts
 		if (agent.currentAgentPhase === 'HARVESTING') {
-			const timeSinceLastFishing = world.currentTick - FishingBehavior.sharedFishingState.lastFishingEndTime;
+			const timeSinceLastFishing = world.currentTick - FishingBehavior.lastFishingEndTime;
 			
-			// Queue management
-			if (!FishingBehavior.sharedFishingState.currentFishingAgent && 
-				FishingBehavior.sharedFishingState.fishingQueue.length > 0 && 
-				timeSinceLastFishing >= this.MIN_FISHING_DELAY) {
-				
-				const nextAgent = FishingBehavior.sharedFishingState.fishingQueue[0];
-				const updatedQueue = FishingBehavior.sharedFishingState.fishingQueue.slice(1);
-				
-				console.log(`[FISHING] ${nextAgent}'s turn to fish. Queue: [${updatedQueue.join(', ')}]`);
-				
-				this.syncSharedState(world, {
-					currentFishingAgent: nextAgent,
-					fishingQueue: updatedQueue
-				});
-			}
-
-			// If no one is fishing and we have a plan but haven't completed it, try to fish
-			if (!FishingBehavior.sharedFishingState.currentFishingAgent && 
+			// If it's this agent's turn and they haven't completed harvesting, try to fish
+			if (this.getCurrentFishingAgent(world) === agent.name && 
 				!currentState.harvestingCompleted && 
 				agent.plannedHarvestAmount && 
-				timeSinceLastFishing >= this.MIN_FISHING_DELAY) {
+				timeSinceLastFishing >= this.MIN_FISHING_DELAY &&
+				!FishingBehavior.isFishing) {  // Add check for global fishing state
 				
-				console.log(`[FISHING] ${agent.name} starting new fishing attempt`);
-				
-				// Set ourselves as the current fishing agent
-				this.syncSharedState(world, {
-					currentFishingAgent: agent.name
+				// Only log when actually attempting to fish
+				const currentHarvest = this.getCurrentHarvestAmount(currentState, agent.name);
+				const totalHarvest = this.getTotalHarvestAmount(currentState, agent.name);
+				console.log(`[FISHING] ${agent.name} attempting to fish in cycle ${world.currentCycle}:`, {
+					currentHarvest,
+					totalHarvest,
+					plannedAmount: agent.plannedHarvestAmount,
+					sequence: this.getCurrentCycleSequence(world)
 				});
-				// Try to fish
+				
 				agent.handleToolCall("cast_rod", {});
 			}
 
-			// Periodic thought updates about waiting in queue
+			// Periodic thought updates about waiting
 			if (!currentState.harvestingCompleted && 
-				FishingBehavior.sharedFishingState.currentFishingAgent !== agent.name) {
+				this.getCurrentFishingAgent(world) !== agent.name) {
 				const lastUpdateTime = FishingBehavior.lastThoughtUpdateTimes.get(agent.name) || 0;
 				if (world.currentTick - lastUpdateTime >= this.THOUGHT_UPDATE_INTERVAL) {
 					const currentHarvest = this.getCurrentHarvestAmount(currentState, agent.name);
-					let message;
+					const totalHarvest = this.getTotalHarvestAmount(currentState, agent.name);
+					const currentPosition = FishingBehavior.baseSequence.indexOf(agent.name);
+					const turnsUntilMyTurn = (currentPosition - FishingBehavior.currentFishingIndex + FishingBehavior.baseSequence.length) % FishingBehavior.baseSequence.length;
 					
-					if (FishingBehavior.sharedFishingState.fishingQueue.includes(agent.name)) {
-						const position = FishingBehavior.sharedFishingState.fishingQueue.indexOf(agent.name) + 1;
-						message = `I am waiting in line to fish (position ${position}). I have caught ${currentHarvest} fish so far out of my planned ${agent.plannedHarvestAmount}.`;
-					} else {
-						message = `I am preparing to fish. I have caught ${currentHarvest} fish so far out of my planned ${agent.plannedHarvestAmount}.`;
-					}
+					const message = `I am in position ${currentPosition + 1} of the permanent fishing sequence. ${turnsUntilMyTurn} agents before my turn. I have caught ${totalHarvest} fish in total across all cycles. For this cycle, I still need ${(agent.plannedHarvestAmount || 0) - currentHarvest} more fish to reach my goal.`;
 					
 					if (message !== agent.getLastMonologue()) {
 						agent.addInternalMonologue(message);
@@ -187,25 +235,37 @@ export class FishingBehavior implements AgentBehavior {
 		return state.harvestAmounts.get(agentName) || 0;
 	}
 
+	private getTotalHarvestAmount(state: FishingState, agentName: string): number {
+		return state.totalHarvestAmounts.get(agentName) || 0;
+	}
+
 	private addToHarvestAmount(agent: BaseAgent, world: GameWorld, amount: number): void {
 		const state = this.getOrInitializeFishingState(agent);
+		
+		// Update per-cycle harvest amount
 		const current = this.getCurrentHarvestAmount(state, agent.name);
 		const newHarvestAmounts = new Map(state.harvestAmounts);
 		newHarvestAmounts.set(agent.name, current + amount);
 
-		// Check if we've completed our planned harvest
-		const newTotal = current + amount;
-		const harvestingCompleted = newTotal >= (agent.plannedHarvestAmount || 0);
+		// Update total harvest amount across all cycles
+		const currentTotal = this.getTotalHarvestAmount(state, agent.name);
+		const newTotalHarvestAmounts = new Map(state.totalHarvestAmounts);
+		newTotalHarvestAmounts.set(agent.name, currentTotal + amount);
+
+		// Check if we've completed our planned harvest for this cycle
+		const newCycleTotal = current + amount;
+		const harvestingCompleted = newCycleTotal >= (agent.plannedHarvestAmount || 0);
 
 		this.updateFishingState(agent, world, {
 			harvestAmounts: newHarvestAmounts,
+			totalHarvestAmounts: newTotalHarvestAmounts,
 			harvestingCompleted: harvestingCompleted
 		});
 
-		// Update thoughts after each catch
+		// Update thoughts after each catch - use total amount for display
 		const message = harvestingCompleted 
-			? `I have successfully completed my harvest with ${newTotal} fish. I will wait for the discussion phase to begin.`
-			: `I just caught ${amount} fish! I have caught ${newTotal} fish so far out of my planned ${agent.plannedHarvestAmount}.`;
+			? `I have successfully completed my harvest for this cycle. I have caught ${currentTotal + amount} fish in total across all cycles.`
+			: `I just caught ${amount} fish! I have caught ${currentTotal + amount} fish in total across all cycles. For this cycle, I still need ${(agent.plannedHarvestAmount || 0) - newCycleTotal} more fish to reach my goal.`;
 		
 		agent.addInternalMonologue(message);
 		
@@ -219,6 +279,14 @@ export class FishingBehavior implements AgentBehavior {
 		
 		// Initialize thought update time
 		FishingBehavior.lastThoughtUpdateTimes.set(agent.name, world.currentTick);
+
+		console.log(`[FISHING] ${agent.name} harvest update:`, {
+			cycle: world.currentCycle,
+			cycleAmount: newCycleTotal,
+			totalAmount: currentTotal + amount,
+			plannedAmount: agent.plannedHarvestAmount,
+			completed: harvestingCompleted
+		});
 	}
 
 	onToolCall(
@@ -232,7 +300,7 @@ export class FishingBehavior implements AgentBehavior {
 
 			const state = this.getOrInitializeFishingState(agent);
 
-			// --- Phase and Turn Check ---
+			// --- Phase Check ---
 			if (agent.currentAgentPhase !== 'HARVESTING') {
 				console.log(`[FISHING] ${agent.name} tried to fish during ${agent.currentAgentPhase} phase.`);
 				return `You can only fish during the HARVESTING phase. It is currently ${agent.currentAgentPhase}.`;
@@ -251,40 +319,24 @@ export class FishingBehavior implements AgentBehavior {
 			}
 
 			// Check if it's this agent's turn
-			if (FishingBehavior.sharedFishingState.currentFishingAgent !== agent.name) {
-				// Add to queue if not already in it
-				if (!FishingBehavior.sharedFishingState.fishingQueue.includes(agent.name) && 
-					FishingBehavior.sharedFishingState.currentFishingAgent !== agent.name) {
-					
-					const updatedQueue = [...FishingBehavior.sharedFishingState.fishingQueue, agent.name];
-					console.log(`[FISHING] ${agent.name} added to queue. Current queue: [${updatedQueue.join(', ')}]`);
-					
-					this.syncSharedState(world, {
-						fishingQueue: updatedQueue
-					});
-				}
-				return `Please wait your turn to fish. ${FishingBehavior.sharedFishingState.currentFishingAgent ? 
-					`${FishingBehavior.sharedFishingState.currentFishingAgent} is currently fishing.` : 
-					'You are in the queue.'}`;
+			if (this.getCurrentFishingAgent(world) !== agent.name) {
+				const position = FishingBehavior.baseSequence.indexOf(agent.name);
+				const turnsUntilMyTurn = (position - FishingBehavior.currentFishingIndex + FishingBehavior.baseSequence.length) % FishingBehavior.baseSequence.length;
+				return `Please wait your turn to fish. You are in position ${position + 1}. ${turnsUntilMyTurn} agents before your turn.`;
 			}
-
-			// Log the attempt
-			logEvent({
-				type: "agent_action_attempt",
-				agentId: agent.id,
-				agentName: agent.name,
-				action: "cast_rod",
-				nearPier: this.isNearPier(agent),
-				alreadyFishing: this.isFishing
-			});
 
 			if (!this.isNearPier(agent)) {
 				return "You need to be closer to the pier to fish!";
 			}
 
-			if (this.isFishing) {
-				return "You're already fishing!";
+			// Check if anyone is currently fishing
+			if (FishingBehavior.isFishing) {
+				return "Someone is already fishing! Please wait for them to finish.";
 			}
+
+			// Start fishing
+			FishingBehavior.isFishing = true;
+			this.updateFishingState(agent, world, { isFishing: true });
 
 			// Add thought when starting to fish
 			const remainingToHarvest = planAmount - currentHarvest;
@@ -299,9 +351,6 @@ export class FishingBehavior implements AgentBehavior {
 				}
 			});
 
-			this.isFishing = true;
-			this.updateFishingState(agent, world, { isFishing: true });
-
 			// Start fishing animation if available
 			agent.stopModelAnimations(["walk_upper", "walk_lower", "run_upper", "run_lower"]);
 			agent.startModelLoopedAnimations(["idle_upper", "idle_lower"]); // Could be replaced with a fishing animation
@@ -313,7 +362,7 @@ export class FishingBehavior implements AgentBehavior {
 
 			// Simulate fishing time
 			setTimeout(() => {
-				this.isFishing = false;
+				FishingBehavior.isFishing = false;
 				this.updateFishingState(agent, world, { isFishing: false });
 				
 				const result = this.rollForFish(world, remainingAmount);
@@ -333,14 +382,13 @@ export class FishingBehavior implements AgentBehavior {
 						metadata: {},
 					});
 
-					// --- FIX: Update UI after inventory is updated ---
+					// Update UI after inventory is updated
 					const playerEntities = world.entityManager.getAllPlayerEntities();
 					playerEntities.forEach(playerEntity => {
 						if (playerEntity?.player) {
 							UIService.sendAgentThoughts(playerEntity.player, world.agents);
 						}
 					});
-					// --- END FIX ---
 
 					// Check if agent has reached their planned amount
 					const newTotal = this.getCurrentHarvestAmount(state, agent.name);
@@ -357,11 +405,9 @@ export class FishingBehavior implements AgentBehavior {
 					world.lake.checkCollapse(world.currentTick);
 				}
 
-				// Update shared state to allow next agent to fish
-				this.syncSharedState(world, {
-					currentFishingAgent: null,
-					lastFishingEndTime: world.currentTick
-				});
+				// Move to next agent in sequence
+				this.moveToNextAgent(world);
+				FishingBehavior.lastFishingEndTime = world.currentTick;
 
 			}, 5000); // 5 second fishing time
 
@@ -407,6 +453,40 @@ export class FishingBehavior implements AgentBehavior {
 	}
 
 	getState(): string {
-		return this.isFishing ? "Currently fishing" : "Not fishing";
+		return FishingBehavior.isFishing ? "Currently fishing" : "Not fishing";
+	}
+
+	handleFishingComplete(agent: BaseAgent, world: GameWorld, amount: number) {
+		const state = this.getOrInitializeFishingState(agent);
+		
+		// Update harvest amounts
+		const currentHarvest = this.getCurrentHarvestAmount(state, agent.name);
+		const totalHarvest = this.getTotalHarvestAmount(state, agent.name);
+		
+		// Update the harvest amounts
+		state.harvestAmounts.set(agent.name, currentHarvest + amount);
+		state.totalHarvestAmounts.set(agent.name, totalHarvest + amount);
+		
+		// Check if harvesting is completed for this cycle
+		if (this.getCurrentHarvestAmount(state, agent.name) >= (agent.plannedHarvestAmount || 0)) {
+			state.harvestingCompleted = true;
+		}
+		
+		// Update fishing state
+		state.isFishing = false;
+		FishingBehavior.isFishing = false;
+		
+		// Log the harvest update
+		console.log(`[FISHING] ${agent.name} harvest update:`, {
+			cycle: world.currentCycle,
+			cycleAmount: this.getCurrentHarvestAmount(state, agent.name),
+			totalAmount: this.getTotalHarvestAmount(state, agent.name),
+			plannedAmount: agent.plannedHarvestAmount,
+			completed: state.harvestingCompleted
+		});
+		
+		// Move to next agent in sequence
+		this.moveToNextAgent(world);
+		FishingBehavior.lastFishingEndTime = world.currentTick;
 	}
 }

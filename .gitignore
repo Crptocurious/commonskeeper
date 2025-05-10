@@ -24,6 +24,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # caches
 .eslintcache
+
 .cache
 *.tsbuildinfo
 
@@ -35,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Tool Outputs
 repomix-output.xml
+
+# Simulation Reports
+simulation_reports
