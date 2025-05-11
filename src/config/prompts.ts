@@ -4,6 +4,8 @@ import type { ChatOptions } from "../brain/cognitive/Plan";
 import type { TownhallHistory } from "../brain/memory/ScratchMemory";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { FishingState } from "../behaviors/FishingBehavior";
+import { FishingBehavior } from "../behaviors/FishingBehavior";
+import type { GameWorld } from "../types/GameState";
 import * as Constants from "../config/constants"; // Adjust path as needed
 
 // --- Core Rule Snippets ---
@@ -31,12 +33,34 @@ export function buildCommonAgentPrompt(agentName: string): string {
 
 // --- Planning Phase Prompts ---
 
-export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: BaseAgent): string {
+// Helper function to get fishing sequence information
+function getFishingSequenceInfo(agent: BaseAgent, world: GameWorld | undefined): string {
+    if (!world) return '';
+    
+    const fishingBehavior = agent.getBehaviors().find(b => b instanceof FishingBehavior) as FishingBehavior;
+    if (!fishingBehavior) return '';
+
+    // Get current cycle number safely
+    const currentCycle = world.currentCycle || 0;
+
+    // Calculate sequences for different cycles
+    const lastCycleSequence = fishingBehavior.getCurrentCycleSequence({ ...world, currentCycle: Math.max(0, currentCycle - 1) } as GameWorld);
+    const nextCycleSequence = fishingBehavior.getCurrentCycleSequence({ ...world, currentCycle: currentCycle + 1 } as GameWorld);
+    
+    return `
+**Fishing Sequence Information:**
+* Last Cycle's Order (Cycle ${Math.max(0, currentCycle - 1)}): [${lastCycleSequence.join(' → ')}]
+* Next Cycle's Order (Cycle ${currentCycle + 1}): [${nextCycleSequence.join(' → ')}]`;
+}
+
+export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: BaseAgent, world: GameWorld): string {
     const constants = Constants;
+    const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
     const phaseInstructions = `
 **Current Phase: PLANNING (${constants.TIME_CONFIG.PLANNING_DURATION_MINUTES} mins)**
 * **Objective:** Decide your **intended harvest amount (N)** for the upcoming Harvest phase based on **inferred** lake health and strategic goals. You **do not know the exact current lake stock**.
 * **Available Information:** Lake Capacity, Collapse Threshold, Regeneration Rule, your total harvest so far, others' *reported* harvests from the last cycle (if available), summary of the last Discussion (if available).
+${fishingSequenceInfo}
 * **Your Task:** Output **ONE** \`<action type="plan_harvest">{ "amount": N }</action>\` tag (where N is the integer amount you intend to try and catch).
 * **Reasoning:** Justify N in your monologue. Estimate the current lake stock based on known rules and reported collective harvest from the previous cycle. Assess the risk of collapse based on your estimate and your planned harvest + anticipated harvest from others. Balance maximizing your potential wealth against the high risk of permanent collapse.
 * **Available Actions:** ONLY \`<action type="plan_harvest">{ "amount": N }</action>\`. After outputting the plan, you will sit idle until the next phase.
@@ -208,12 +232,14 @@ export function buildSpeakPrompt(): string {
 }
 
 // --- Communication Phase Prompts ---
-export function buildCommunicationPrompt(agent: BaseAgent, currentRetry: number = 0): ChatCompletionMessageParam[] {
+export function buildCommunicationPrompt(agent: BaseAgent, world: GameWorld, currentRetry: number = 0): ChatCompletionMessageParam[] {
     const constants = Constants;
     const fishingMemory = agent.getScratchMemory().getFishingMemory();
     const cycleHarvest = fishingMemory.harvestAmounts.get(agent.name) || 0;
     const totalHarvest = fishingMemory.totalHarvestAmounts.get(agent.name) || 0;
+    const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
 
+    console.log(`[CommunicationPrompt] Fishing Sequence Info: ${fishingSequenceInfo}`);
     console.log(`[CommunicationPrompt] ${agent.name} has harvested ${cycleHarvest} fish this cycle and ${totalHarvest} fish in total.`);
 
     return [
@@ -226,6 +252,8 @@ ${CORE_RULES(constants)}
 Your Harvest Information:
 * Current Cycle Harvest: ${cycleHarvest} fish
 * Total Harvest (all cycles): ${totalHarvest} fish
+
+${fishingSequenceInfo}
 
 During townhall discussions, you engage with other agents to discuss about fish harvesting.
 

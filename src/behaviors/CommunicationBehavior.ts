@@ -107,7 +107,7 @@ export class CommunicationBehavior implements AgentBehavior {
 
             // Prepare the messages for the LLM
             const messages = [
-                ...buildCommunicationPrompt(agent, currentRetry),
+                ...buildCommunicationPrompt(agent, world, currentRetry),
                 buildCommunicationUserPrompt(chatHistoryText, currentRetry)
             ];
 
