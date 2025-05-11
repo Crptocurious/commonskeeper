@@ -5,6 +5,7 @@ import { logEvent } from "../logger";
 import { BaseLLM } from "../brain/BaseLLM";
 import { UIService } from "../services/UIService";
 import { COMMUNICATION_CONFIG } from "../config/constants";
+import { buildCommunicationPrompt, buildCommunicationUserPrompt } from "../config/prompts";
 
 export class CommunicationBehavior implements AgentBehavior {
     private llm: BaseLLM;
@@ -106,41 +107,8 @@ export class CommunicationBehavior implements AgentBehavior {
 
             // Prepare the messages for the LLM
             const messages = [
-                {
-                    role: "system" as const,
-                    content: `You are ${agent.name}, an AI agent in a multiplayer fishing game focused on resource management and social dynamics.
-During townhall discussions, you engage with other agents to discuss fishing strategies, lake sustainability, and cooperation.
-
-STRICT RESPONSE FORMAT REQUIRED:
-Your response MUST contain exactly two tags in this order:
-1. <monologue>Your internal thoughts</monologue>
-2. <speak>What you say to others</speak>
-
-Example of correct format:
-<monologue>I think we should discuss the fishing quotas.</monologue>
-<speak>I propose we set a limit of 100 fish per day.</speak>
-
-Rules:
-- Always include BOTH tags
-- Put your thoughts in <monologue> tags
-- Put your spoken message in <speak> tags
-- Never mix up the order of tags
-- Never use these tags more than once
-- Never include one tag inside another
-- Never write messages outside these tags
-
-Focus your discussion on:
-- Lake sustainability and fishing strategies
-- Coordination to prevent overfishing
-- Sharing information about lake conditions
-- Planning for the next harvest phase
-
-Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR PREVIOUS RESPONSE DID NOT MATCH THE REQUIRED FORMAT. PLEASE ENSURE YOU USE BOTH <monologue> AND <speak> TAGS IN THE CORRECT ORDER.' : ''}`
-                },
-                {
-                    role: "user" as const,
-                    content: `Here's the current discussion:\n\n${chatHistoryText}\n\nIt's your turn to speak. Respond using the required format with both <monologue> and <speak> tags.${currentRetry > 0 ? ' Make sure to follow the format exactly!' : ''}`
-                }
+                ...buildCommunicationPrompt(agent, currentRetry),
+                buildCommunicationUserPrompt(chatHistoryText, currentRetry)
             ];
 
             // Get response from LLM
