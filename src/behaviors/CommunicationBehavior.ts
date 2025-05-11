@@ -16,18 +16,24 @@ export class CommunicationBehavior implements AgentBehavior {
         lastUpdateTick: 0
     };
 
+    // Track last logged speaker to avoid duplicate logs
+    private static lastLoggedSpeaker: string | null = null;
+
     constructor() {
         this.llm = new BaseLLM();
     }
 
     private syncTownhallHistoryToAllAgents(world: GameWorld, history: TownhallHistory) {
-        // console.log(`[CommunicationBehavior] Syncing townhall history to all agents:`, {
-        //     isDiscussionInProgress: history.isDiscussionInProgress,
-        //     currentSpeakerIndex: history.currentSpeakerIndex,
-        //     messageCount: history.messages.length,
-        //     lastUpdateTick: history.lastUpdateTick,
-        //     messages: history.messages
-        // });
+        // Only log when discussion state changes
+        if (history.isDiscussionInProgress !== CommunicationBehavior.sharedHistory.isDiscussionInProgress ||
+            history.currentSpeakerIndex !== CommunicationBehavior.sharedHistory.currentSpeakerIndex) {
+            console.log(`[CommunicationBehavior] Discussion state updated:`, {
+                isDiscussionInProgress: history.isDiscussionInProgress,
+                currentSpeakerIndex: history.currentSpeakerIndex,
+                messageCount: history.messages.length,
+                lastUpdateTick: history.lastUpdateTick
+            });
+        }
 
         // Update shared history first
         CommunicationBehavior.sharedHistory = {
@@ -49,7 +55,14 @@ export class CommunicationBehavior implements AgentBehavior {
 
         // Get all agents from the world
         const allAgents = world.agents || [];
-        if (!allAgents.length) return;
+        if (!allAgents.length) {
+            // Only log once if there are no agents
+            if (CommunicationBehavior.lastLoggedSpeaker !== 'NO_AGENTS') {
+                console.log(`[CommunicationBehavior] No agents found in world for ${agent.name}`);
+                CommunicationBehavior.lastLoggedSpeaker = 'NO_AGENTS';
+            }
+            return;
+        }
 
         // Use shared history as source of truth
         const townhallHistory = CommunicationBehavior.sharedHistory;
@@ -64,11 +77,15 @@ export class CommunicationBehavior implements AgentBehavior {
         if (currentAgent && currentAgent.name === agent.name) {
             // Check if enough time has passed since last update
             const timeSinceLastUpdate = agent.currentAgentTick - townhallHistory.lastUpdateTick;
-            if (timeSinceLastUpdate < COMMUNICATION_CONFIG.TURN_DELAY_TICKS) { // Use the configured delay
+            if (timeSinceLastUpdate < COMMUNICATION_CONFIG.TURN_DELAY_TICKS) {
                 return;
             }
 
-            console.log(`[CommunicationBehavior] ${agent.name} starting turn at tick ${agent.currentAgentTick}`);
+            // Only log when a new agent starts their turn
+            if (CommunicationBehavior.lastLoggedSpeaker !== agent.name) {
+                console.log(`[CommunicationBehavior] ${agent.name} starting turn at tick ${agent.currentAgentTick}`);
+                CommunicationBehavior.lastLoggedSpeaker = agent.name;
+            }
             
             // Set discussion in progress before starting the turn
             this.syncTownhallHistoryToAllAgents(world, {
@@ -77,7 +94,12 @@ export class CommunicationBehavior implements AgentBehavior {
                 lastUpdateTick: agent.currentAgentTick
             });
 
-            this.handleAgentTurn(agent, world);
+            // Handle the turn asynchronously but properly
+            this.handleAgentTurn(agent, world).catch(error => {
+                console.error(`[CommunicationBehavior] Error during ${agent.name}'s turn:`, error);
+                // Make sure to end the turn even if there's an error
+                this.endTurn(agent, world);
+            });
         }
     }
 
