@@ -59,20 +59,33 @@ export class FishingBehavior implements AgentBehavior {
 		return memory.getFishingMemory();
 	}
 
-	private getCurrentCycleSequence(world: GameWorld): string[] {
+	public getCurrentCycleSequence(world: GameWorld | undefined): string[] {
+		// Try to initialize if not initialized yet
+		if (!FishingBehavior.hasInitializedSequence && world) {
+			this.initializeFishingSequence(world);
+		}
+
+		// If sequence not initialized, no agents, or no world object, return empty array
+		if (!FishingBehavior.hasInitializedSequence || 
+			FishingBehavior.baseSequence.length === 0 ||
+			!world) {
+			return [];
+		}
+
 		// Calculate the sequence for the current cycle
 		return FishingBehavior.baseSequence.map((_, i) => {
-			const effectiveIndex = (i + world.currentCycle) % FishingBehavior.baseSequence.length;
+			const currentCycle = typeof world.currentCycle === 'number' ? world.currentCycle : 0;
+			const effectiveIndex = (i + currentCycle) % FishingBehavior.baseSequence.length;
 			const agent = FishingBehavior.baseSequence[effectiveIndex];
 			if (!agent) {
-				throw new Error('Unexpected undefined agent in base sequence');
+				return ''; // Return empty string instead of throwing error for undefined agent
 			}
 			return agent;
-		});
+		}).filter(agent => agent !== ''); // Filter out any empty strings
 	}
 
 	private initializeFishingSequence(world: GameWorld) {
-		if (!FishingBehavior.hasInitializedSequence) {
+		if (!FishingBehavior.hasInitializedSequence && world.agents && world.agents.length > 0) {
 			// Get all agents and ensure they have names
 			const agents = world.agents
 				.map(agent => agent.name)
@@ -102,11 +115,12 @@ export class FishingBehavior implements AgentBehavior {
 		}
 	}
 
-	private getCurrentFishingAgent(world: GameWorld): string | null {
-		if (FishingBehavior.baseSequence.length === 0) return null;
+	public getCurrentFishingAgent(world: GameWorld | undefined): string | null {
+		if (!world || FishingBehavior.baseSequence.length === 0) return null;
 		
 		// Calculate effective index based on current fishing index and cycle rotation
-		const effectiveIndex = (FishingBehavior.currentFishingIndex + world.currentCycle) % FishingBehavior.baseSequence.length;
+		const currentCycle = typeof world.currentCycle === 'number' ? world.currentCycle : 0;
+		const effectiveIndex = (FishingBehavior.currentFishingIndex + currentCycle) % FishingBehavior.baseSequence.length;
 		return FishingBehavior.baseSequence[effectiveIndex] || null;
 	}
 
