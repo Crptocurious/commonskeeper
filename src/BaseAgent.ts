@@ -99,6 +99,7 @@ export class BaseAgent extends Entity {
 			if (this.currentWorld.currentPhase !== previousPhase) {
 				this.lastAgentPhase = this.currentAgentPhase;
 				this.currentAgentPhase = this.currentWorld.currentPhase;
+				console.log(`[${this.name}] Phase changed from ${previousPhase} to ${this.currentAgentPhase}`);
 
 				// Trigger planning logic when entering the PLANNING phase
 				if (this.currentAgentPhase === 'PLANNING') {
@@ -107,8 +108,15 @@ export class BaseAgent extends Entity {
 				}
 				// Trigger discussion logic when entering the DISCUSSION phase
 				else if (this.currentAgentPhase === 'DISCUSSION') {
-					// this.handleEnvironmentTrigger("The DISCUSSION phase has begun. Let's gather at the townhall to discuss our strategies.");
-					console.log("The Communication should automatically start via behaviour updates. Nothing to do here.");
+					console.log(`[${this.name}] Entering DISCUSSION phase. Resetting communication state.`);
+					// Reset communication state when entering discussion phase
+					const townhallHistory = this.scratchMemory.getTownhallHistory();
+					this.scratchMemory.updateTownhallHistory({
+						...townhallHistory,
+						isDiscussionInProgress: false,
+						currentSpeakerIndex: 0,
+						lastUpdateTick: this.currentAgentTick
+					});
 					this.lastActionTick = this.currentAgentTick;
 				}
 			}
