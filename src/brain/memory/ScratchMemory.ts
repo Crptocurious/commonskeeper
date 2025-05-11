@@ -35,6 +35,7 @@ export class ScratchMemory {
         };
         this.fishingMemory = {
             harvestAmounts: new Map(),
+            lastHarvestAmounts: new Map(),
             totalHarvestAmounts: new Map(),
             isFishing: false,
             harvestingCompleted: false

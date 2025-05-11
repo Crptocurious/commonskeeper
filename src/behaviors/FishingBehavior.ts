@@ -13,7 +13,8 @@ interface FishResult {
 }
 
 export interface FishingState {
-	harvestAmounts: Map<string, number>;  // Per-cycle harvest amounts
+	harvestAmounts: Map<string, number>;  // Current cycle harvest amounts
+	lastHarvestAmounts: Map<string, number>;  // Previous cycle harvest amounts
 	totalHarvestAmounts: Map<string, number>;  // Total harvest amounts across all cycles
 	isFishing: boolean;
 	harvestingCompleted: boolean;
@@ -125,11 +126,22 @@ export class FishingBehavior implements AgentBehavior {
 	private resetPerCycleFishingState(agent: BaseAgent, world: GameWorld) {
 		const memory = agent.getScratchMemory();
 		const fishingMemory = memory.getFishingMemory();
+		
+		// Move current harvest amounts to last harvest amounts
+		const newLastHarvestAmounts = new Map(fishingMemory.harvestAmounts);
+		
+		// Log the state transition
+		console.log(`[FISHING] ${agent.name} cycle reset:`, {
+			cycle: world.currentCycle,
+			previousHarvest: Object.fromEntries(fishingMemory.harvestAmounts),
+			movingToLastHarvest: Object.fromEntries(newLastHarvestAmounts)
+		});
+
 		this.updateFishingState(agent, world, {
 			...fishingMemory,
-			harvestAmounts: new Map(),  // Reset per-cycle amounts
-			harvestingCompleted: false,
-			totalHarvestAmounts: fishingMemory.totalHarvestAmounts  // Preserve total amounts
+			lastHarvestAmounts: newLastHarvestAmounts,
+			harvestAmounts: new Map(), // Reset current harvest amounts
+			harvestingCompleted: false  // Reset completion status
 		});
 	}
 
@@ -141,6 +153,7 @@ export class FishingBehavior implements AgentBehavior {
 			this.initializeFishingSequence(world);
 			this.updateFishingState(agent, world, {
 				harvestAmounts: new Map(),
+				lastHarvestAmounts: new Map(),
 				totalHarvestAmounts: new Map(),
 				isFishing: false,
 				harvestingCompleted: false
@@ -151,15 +164,16 @@ export class FishingBehavior implements AgentBehavior {
 		// Reset states at the start of each cycle
 		if (world.currentTick === 0) {
 			FishingBehavior.currentFishingIndex = 0;  // Reset to start of sequence
-			// Reset harvest completion status for all agents
+			// Only reset completion status for all agents
 			world.agents.forEach(agent => {
 				this.resetPerCycleFishingState(agent, world);
 			});
 			const nextCycleSequence = this.getCurrentCycleSequence(world);
-			console.log(`[FISHING] Starting cycle ${world.currentCycle}`);
-			console.log(`[FISHING] Base sequence: [${FishingBehavior.baseSequence.join(', ')}]`);
-			console.log(`[FISHING] This cycle's sequence: [${nextCycleSequence.join(', ')}]`);
-			console.log(`[FISHING] First agent to fish will be: ${this.getCurrentFishingAgent(world)}`);
+			console.log(`[FISHING] Starting cycle ${world.currentCycle}:`, {
+				baseSequence: FishingBehavior.baseSequence,
+				nextCycleSequence,
+				firstFisher: this.getCurrentFishingAgent(world)
+			});
 		}
 
 		// If in HARVESTING phase, manage fishing and update thoughts
@@ -315,7 +329,9 @@ export class FishingBehavior implements AgentBehavior {
 			// Check if agent has already reached their planned amount
 			const currentHarvest = this.getCurrentHarvestAmount(state, agent.name);
 			if (currentHarvest >= planAmount) {
-				return `You've already harvested your planned amount of ${planAmount} fish.`;
+				const message = `You've already harvested your planned amount of ${planAmount} fish for this cycle (Current: ${currentHarvest}).`;
+				console.log(`[FISHING] ${agent.name} ${message}`);
+				return message;
 			}
 
 			// Check if it's this agent's turn

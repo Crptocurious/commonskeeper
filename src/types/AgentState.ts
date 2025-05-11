@@ -67,7 +67,7 @@ export interface AgentState {
     totalHarvested: number;
     internalMonologue: string[];
     nearbyEntities: NearbyEntity[];
-    fishingState?: FishingState;
+    // fishingState?: FishingState;
     // scratchMemory: {
     //     getRecentActionMemories(count?: number): ActionHistoryEntry[];
     // }

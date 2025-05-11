@@ -2,6 +2,8 @@ import type { BaseAgent, CompleteState } from "../BaseAgent";
 import type { AgentBehavior } from "../BaseAgent";
 import type { ChatOptions } from "../brain/cognitive/Plan";
 import type { TownhallHistory } from "../brain/memory/ScratchMemory";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { FishingState } from "../behaviors/FishingBehavior";
 import * as Constants from "../config/constants"; // Adjust path as needed
 
 // --- Core Rule Snippets ---
@@ -54,25 +56,25 @@ ${customPrompt}`.trim();
 
 // --- Discussion Phase Prompts ---
 
-export function buildDiscussionPhaseSystemPrompt(customPrompt: string, agent: BaseAgent): string {
-    const constants = Constants;
-    const phaseInstructions = `
-**Current Phase: DISCUSSION (${constants.TIME_CONFIG.DISCUSSION_DURATION_MINUTES} mins)**
-* **Objective:** Communicate with other agents at the townhall (movement is automatic). Share results accurately, discuss strategies for the *next* cycle, coordinate to ensure sustainability, express concerns, or propose agreements based on the *reported* outcomes of the last harvest.
-* **Your Tasks:**
-    1.  **(Required Early)** Report your actual catch from the *last* Harvest phase using ONE \`<report harvest=X />\` tag (where X is the integer amount you successfully caught). Accuracy is important.
-    2.  Participate in the discussion using \`<action type="townhall_speak">{"message": "..."}\</action>\`. Respond thoughtfully to others. Focus on sustainability, coordination, and interpreting reported results to plan for the future.
-* **Available Actions:** ONLY \`<report harvest=X />\` and \`<action type="townhall_speak">\`. You cannot move via commands or speak locally during this phase.
-* **Action Syntax:**
-    <report harvest=X /> ${buildSpeakPrompt().split('\\n')[2]} `; // Assumes buildSpeakPrompt structure from previous examples
+// export function buildDiscussionPhaseSystemPrompt(customPrompt: string, agent: BaseAgent): string {
+//     const constants = Constants;
+//     const phaseInstructions = `
+// **Current Phase: DISCUSSION (${constants.TIME_CONFIG.DISCUSSION_DURATION_MINUTES} mins)**
+// * **Objective:** Communicate with other agents at the townhall (movement is automatic). Share results accurately, discuss strategies for the *next* cycle, coordinate to ensure sustainability, express concerns, or propose agreements based on the *reported* outcomes of the last harvest.
+// * **Your Tasks:**
+//     1.  **(Required Early)** Report your actual catch from the *last* Harvest phase using ONE \`<report harvest=X />\` tag (where X is the integer amount you successfully caught). Accuracy is important.
+//     2.  Participate in the discussion using \`<action type="townhall_speak">{"message": "..."}\</action>\`. Respond thoughtfully to others. Focus on sustainability, coordination, and interpreting reported results to plan for the future.
+// * **Available Actions:** ONLY \`<report harvest=X />\` and \`<action type="townhall_speak">\`. You cannot move via commands or speak locally during this phase.
+// * **Action Syntax:**
+//     <report harvest=X /> ${buildSpeakPrompt().split('\\n')[2]} `; // Assumes buildSpeakPrompt structure from previous examples
 
-    return `You are an AI Agent role-playing as a fisherman.
-${CORE_RULES(constants)}
-${OUTPUT_FORMATTING}
-${phaseInstructions}
-**Your Specific Role & Strategy:**
-${customPrompt}`.trim();
-}
+//     return `You are an AI Agent role-playing as a fisherman.
+// ${CORE_RULES(constants)}
+// ${OUTPUT_FORMATTING}
+// ${phaseInstructions}
+// **Your Specific Role & Strategy:**
+// ${customPrompt}`.trim();
+// }
 
 // --- Universal User Message Builder (Context Provider) ---
 
@@ -203,5 +205,57 @@ export function buildPathfindingPrompt(townhallRange: number, locations: Record<
 export function buildSpeakPrompt(): string {
     // Return both syntaxes, but the main system prompts will only show the relevant one.
     return `<action type="speak">{"message": "..."}</action> <action type="townhall_speak">{"message": "..."}</action> `;
+}
+
+// --- Communication Phase Prompts ---
+export function buildCommunicationPrompt(agent: BaseAgent, currentRetry: number = 0): ChatCompletionMessageParam[] {
+    const constants = Constants;
+    const fishingMemory = agent.getScratchMemory().getFishingMemory();
+    const cycleHarvest = fishingMemory.harvestAmounts.get(agent.name) || 0;
+    const totalHarvest = fishingMemory.totalHarvestAmounts.get(agent.name) || 0;
+
+    console.log(`[CommunicationPrompt] ${agent.name} has harvested ${cycleHarvest} fish this cycle and ${totalHarvest} fish in total.`);
+
+    return [
+        {
+            role: "system",
+            content: `You are ${agent.name}, an AI agent in a multi-agent fishing environment.
+
+${CORE_RULES(constants)}
+
+Your Harvest Information:
+* Current Cycle Harvest: ${cycleHarvest} fish
+* Total Harvest (all cycles): ${totalHarvest} fish
+
+During townhall discussions, you engage with other agents to discuss about fish harvesting.
+
+STRICT RESPONSE FORMAT REQUIRED:
+Your response MUST contain exactly two tags in this order:
+1. <monologue>Your internal thoughts</monologue>
+2. <speak>What you say to others</speak>
+
+Example of correct format:
+<monologue>I think I should ask the other agents about harvesting.</monologue>
+<speak>Hey, let's talk about harvesting.</speak>
+
+Rules:
+- Always include BOTH tags
+- Put your thoughts in <monologue> tags
+- Put your spoken message in <speak> tags
+- Never mix up the order of tags
+- Never use these tags more than once
+- Never include one tag inside another
+- Never write messages outside these tags
+
+Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR PREVIOUS RESPONSE DID NOT MATCH THE REQUIRED FORMAT. PLEASE ENSURE YOU USE BOTH <monologue> AND <speak> TAGS IN THE CORRECT ORDER.' : ''}`
+        }
+    ];
+}
+
+export function buildCommunicationUserPrompt(chatHistoryText: string, currentRetry: number = 0): ChatCompletionMessageParam {
+    return {
+        role: "user",
+        content: `Here's the current discussion:\n\n${chatHistoryText}\n\nIt's your turn to speak. Respond using the required format with both <monologue> and <speak> tags.${currentRetry > 0 ? ' Make sure to follow the format exactly!' : ''}`
+    };
 }
 
