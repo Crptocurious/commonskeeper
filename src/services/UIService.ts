@@ -25,14 +25,15 @@ export class UIService {
     }
 
     static sendPhaseUpdate(world: GameWorld) {
-        console.log(`UI Update: Phase changed to ${world.currentPhase}`);
+        console.log(`UI Update: Phase changed to ${world.currentPhase}, Cycle ${world.currentCycle}`);
         const playerEntities = world.entityManager.getAllPlayerEntities();
         
         playerEntities.forEach((playerEntity) => {
             if (playerEntity?.player?.ui) {
                 playerEntity.player.ui.sendData({
                     type: 'phaseUpdate',
-                    phase: world.currentPhase  // This will be either 'TOWNHALL' or 'HARVEST' matching the UI expectations
+                    phase: world.currentPhase,
+                    cycle: world.currentCycle
                 });
             }
         });

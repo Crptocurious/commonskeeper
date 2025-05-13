@@ -6,7 +6,8 @@
 
 <!-- Add Phase Display Panel -->
 <div id="phase-display-panel">
-    Current Phase: <span id="phase-text">Loading...</span>
+    <div id="cycle-text">Cycle: <span id="cycle-number">0</span></div>
+    <div id="phase-line">Current Phase: <span id="phase-text">Loading...</span></div>
 </div>
 
 <!-- Template for Agent Chat Bubble -->
@@ -215,12 +216,27 @@
     left: 20px;
     background-color: rgba(0, 0, 0, 0.7);
     color: white;
-    padding: 10px 15px;
+    padding: 15px;
     border-radius: 8px;
     font-family: Arial, sans-serif;
     font-size: 14px;
     z-index: 10;
 }
+
+#cycle-text {
+    color: #ffcc00;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+#cycle-number {
+    color: #ffcc00;
+}
+
+#phase-line {
+    margin-top: 2px;
+}
+
 #phase-text {
     font-weight: bold;
     color: #ffcc00; /* Default color */
@@ -391,10 +407,16 @@ hytopia.onData((data) => {
     // --- Phase Update --- 
     else if (data.type === 'phaseUpdate') {
         const phaseTextEl = document.getElementById('phase-text');
+        const cycleNumberEl = document.getElementById('cycle-number');
+        
         if (phaseTextEl) {
             phaseTextEl.textContent = data.phase || 'Unknown';
             // Change color based on phase
-            phaseTextEl.style.color = data.phase === 'HARVEST' ? '#ff6b6b' : '#6bffb8'; // Red for Harvest, Green for Discussion
+            phaseTextEl.style.color = data.phase === 'HARVESTING' ? '#ff6b6b' : '#6bffb8'; // Red for Harvest, Green for Discussion
+        }
+        
+        if (cycleNumberEl) {
+            cycleNumberEl.textContent = data.cycle.toString();
         }
     }
 
