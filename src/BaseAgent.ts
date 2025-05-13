@@ -105,19 +105,6 @@ export class BaseAgent extends Entity {
 					this.handleEnvironmentTrigger("The PLANNING phase has begun. Review the situation and decide your harvest plan.");
 					this.lastActionTick = this.currentAgentTick; // Reset action timer after planning trigger
 				}
-				// Trigger discussion logic when entering the DISCUSSION phase
-				else if (this.currentAgentPhase === 'DISCUSSION') {
-					console.log(`[${this.name}] Entering DISCUSSION phase. Resetting communication state.`);
-					// Reset communication state when entering discussion phase
-					const townhallHistory = this.scratchMemory.getTownhallHistory();
-					this.scratchMemory.updateTownhallHistory({
-						...townhallHistory,
-						isDiscussionInProgress: false,
-						currentSpeakerIndex: 0,
-						lastUpdateTick: this.currentAgentTick
-					});
-					this.lastActionTick = this.currentAgentTick;
-				}
 			}
 
 			// Update lake state if available

@@ -20,6 +20,7 @@ import type { GameWorld } from "./src/types/GameState";
 import { MetricsTracker } from "./src/MetricsTracker";
 import { EVENT_COLLAPSE } from "./src/Lake";
 import type { GamePhase } from "./src/types/GameState";
+import { CommunicationBehavior } from "./src/behaviors/CommunicationBehavior";
 
 // Define the agent configurations
 
@@ -130,6 +131,19 @@ startServer((world: World) => {
                 metricsTracker.recordLakeRegeneration(regeneratedAmount); 
                 UIService.sendLakeStatusUpdate(gameWorld, lake); // Update UI after regeneration
                 console.log(`--- Lake Regenerated: ${regeneratedAmount.toFixed(2)} at Current Tick: ${gameWorld.currentTick}, Total Ticks: ${totalElapsedTicks} ---`);
+            }
+
+            if (newPhase === 'DISCUSSION') {
+                // Reset townhall history for new cycle
+                CommunicationBehavior.resetSharedHistory(); // Reset the shared history first
+                gameWorld.agents.forEach(agent => {
+                    agent.getScratchMemory().updateTownhallHistory({
+                        messages: [],
+                        isDiscussionInProgress: false,
+                        currentSpeakerIndex: 0,
+                        lastUpdateTick: 0
+                    });
+                });
             }
         }
 
