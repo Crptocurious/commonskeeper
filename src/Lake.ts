@@ -12,7 +12,7 @@ export class Lake extends EventEmitter {
   private _isCollapsed: boolean = false; // Persistent collapse state
   private readonly COLLAPSE_THRESHOLD_PERCENT = SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD / 100 ;
   private lastUpdateTick: number;
-  readonly intrinsicGrowthRate: number = 0.05; // Logistic growth r value
+  readonly intrinsicGrowthRate: number = SIMULATION_CONFIG.LAKE_INTRINSIC_GROWTH_RATE; // Use from config
 
   /**
    * Initializes the Lake resource.
