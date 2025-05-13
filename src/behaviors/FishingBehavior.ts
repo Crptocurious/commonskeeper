@@ -40,6 +40,7 @@ export class FishingBehavior implements AgentBehavior {
 	private static lastFishingEndTime: number = 0;
 	private static hasInitializedSequence: boolean = false;
 	private static lastThoughtUpdateTimes: Map<string, number> = new Map();
+	private static currentFishingPromise: Promise<void> | null = null;  // Add tracking for current fishing attempt
 
 	private readonly THOUGHT_UPDATE_INTERVAL = TIME_CONFIG.TICKS_PER_SECOND * 10; // Update every 10 seconds
 	private readonly MIN_FISHING_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 1; // 1 second minimum delay between fishing attempts
@@ -359,8 +360,8 @@ export class FishingBehavior implements AgentBehavior {
 				return "You need to be closer to the pier to fish!";
 			}
 
-			// Check if anyone is currently fishing
-			if (FishingBehavior.isFishing) {
+			// Check if anyone is currently fishing or if there's a pending fishing attempt
+			if (FishingBehavior.isFishing || FishingBehavior.currentFishingPromise) {
 				return "Someone is already fishing! Please wait for them to finish.";
 			}
 
@@ -390,56 +391,59 @@ export class FishingBehavior implements AgentBehavior {
 
 			console.log(`[FISHING] ${agent.name} started fishing for ${remainingAmount} fish`);
 
-			// Simulate fishing time
-			setTimeout(() => {
-				FishingBehavior.isFishing = false;
-				this.updateFishingState(agent, world, { isFishing: false });
-				
-				const result = this.rollForFish(world, remainingAmount);
-
-				if (result.success) {
-					console.log(`[FISHING] ${agent.name} caught ${result.harvestedAmount} fish`);
+			// Create a new Promise for this fishing attempt
+			FishingBehavior.currentFishingPromise = new Promise<void>((resolve) => {
+				setTimeout(() => {
+					FishingBehavior.isFishing = false;
+					this.updateFishingState(agent, world, { isFishing: false });
 					
-					// Record the successful harvest for metrics
-					world.metricsTracker.recordAgentHarvest(agent.name, result.harvestedAmount);
+					const result = this.rollForFish(world, remainingAmount);
 
-					// Update harvest amount tracking
-					this.addToHarvestAmount(agent, world, result.harvestedAmount);
+					if (result.success) {
+						console.log(`[FISHING] ${agent.name} caught ${result.harvestedAmount} fish`);
+						
+						// Record the successful harvest for metrics
+						world.metricsTracker.recordAgentHarvest(agent.name, result.harvestedAmount);
 
-					agent.addToInventory({
-						name: "fish",
-						quantity: result.harvestedAmount,
-						metadata: {},
-					});
+						// Update harvest amount tracking
+						this.addToHarvestAmount(agent, world, result.harvestedAmount);
 
-					// Update UI after inventory is updated
-					const playerEntities = world.entityManager.getAllPlayerEntities();
-					playerEntities.forEach(playerEntity => {
-						if (playerEntity?.player) {
-							UIService.sendAgentThoughts(playerEntity.player, world.agents);
+						agent.addToInventory({
+							name: "fish",
+							quantity: result.harvestedAmount,
+							metadata: {},
+						});
+
+						// Update UI after inventory is updated
+						const playerEntities = world.entityManager.getAllPlayerEntities();
+						playerEntities.forEach(playerEntity => {
+							if (playerEntity?.player) {
+								UIService.sendAgentThoughts(playerEntity.player, world.agents);
+							}
+						});
+
+						// Check if agent has reached their planned amount
+						const newTotal = this.getCurrentHarvestAmount(state, agent.name);
+						if (newTotal >= planAmount) {
+							agent.plannedHarvestAmount = null; // Reset plan since it's completed
+							console.log(`[FISHING] ${agent.name} completed their planned harvest of ${planAmount}`);
 						}
-					});
-
-					// Check if agent has reached their planned amount
-					const newTotal = this.getCurrentHarvestAmount(state, agent.name);
-					if (newTotal >= planAmount) {
-						agent.plannedHarvestAmount = null; // Reset plan since it's completed
-						console.log(`[FISHING] ${agent.name} completed their planned harvest of ${planAmount}`);
+					} else {
+						console.log(`[FISHING] ${agent.name}'s fishing attempt was unsuccessful`);
 					}
-				} else {
-					console.log(`[FISHING] ${agent.name}'s fishing attempt was unsuccessful`);
-				}
 
-				// Check for lake collapse after the harvest is complete
-				if (world.lake) {
-					world.lake.checkCollapse(world.currentTick);
-				}
+					// Check for lake collapse after the harvest is complete
+					if (world.lake) {
+						world.lake.checkCollapse(world.currentTick);
+					}
 
-				// Move to next agent in sequence
-				this.moveToNextAgent(world);
-				FishingBehavior.lastFishingEndTime = world.currentTick;
-
-			}, 5000); // 5 second fishing time
+					// Move to next agent in sequence
+					this.moveToNextAgent(world);
+					FishingBehavior.lastFishingEndTime = world.currentTick;
+					FishingBehavior.currentFishingPromise = null;  // Clear the promise
+					resolve();
+				}, 5000); // 5 second fishing time
+			});
 
 			return `Casting your line to try and catch ${remainingAmount} fish...`;
 		} else if (toolName === "give_fish") {
