@@ -16,7 +16,7 @@ const CORE_RULES = (constants: typeof Constants) => `
 **Goal:** Maximize your long-term **Total Fish Harvested** (Wealth). This depends entirely on lake survival.
 **Lake Capacity:** ${constants.SIMULATION_CONFIG.LAKE_CAPACITY} fish. The lake under no condition will exceed this capacity. It is a hard limit.
 **Lake Collapse:** If stock drops to **${constants.SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD}% of capacity or less** after harvest, the lake collapses **PERMANENTLY**. No more fish can be harvested, ending the simulation for everyone (failure).
-**Regeneration:** Lake stock grows using a logistic growth model at the start of each PLANNING phase. Formula: newFish = r * currentStock * (1 - currentStock/capacity), where r=${constants.SIMULATION_CONFIG.LAKE_INTRINSIC_GROWTH_RATE}. The new stock will be currentStock + newFish, capped at capacity. No regeneration if collapsed.
+**Regeneration:** Lake stock grows using a logistic growth model at the end of cycle considering the planning, harvest and discussion phases. Formula: newFish = r * currentStock * (1 - currentStock/capacity), where r=${constants.SIMULATION_CONFIG.LAKE_INTRINSIC_GROWTH_RATE}. The new stock will be currentStock + newFish, capped at capacity. No regeneration if collapsed.
 **Total Agents:** ${constants.AGENT_CONFIGS.length} agents (${constants.AGENT_CONFIGS.map(config => config.name).join(", ")}) share the lake resources and harvest at the same time. When deciding your harvest amount, you may want to consider this point.
 **Cycle Sequence:**: Planning -> Harvest -> Discussion.
 `;
@@ -238,6 +238,7 @@ ${fishingSequenceInfo}
 
 Lake State:
 ${JSON.stringify(lakeState, null, 2)}
+You must consider the current lake state and possible lake re-generation when discussing with other agents.
 
 Current Discussion:
 ${chatHistoryText}
