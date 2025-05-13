@@ -1,95 +1,94 @@
-Commons Keeper – Tragedy of the Commons Demo
+# Commons Keeper: Multi-Agent Resource Management Simulation
 
-This repository shows how to build a multi‑agent, resource‑sharing world with the [HYTOPIA SDK]. A society of AI fishers must harvest just enough fish each day to keep the lake alive for tomorrow. Use it as a starting point for research on cooperation, governance and emergent norms.
+This repository presents a modular, scalable simulation of resource management in a shared environment, focusing on multi-agent behavior and sustainability. The project progresses from basic agent interactions and environmental dynamics to more complex social and ecological modeling. The project is organized into several parts, each with a detailed technical plan:
 
-✨ Features
+**Part 1: Core Simulation Environment**
 
-Renewable Lake with logistic growth and collapse mechanics
+* Implements a simulated lake ecosystem with resource regeneration and collapse mechanics.
+* Defines the core game loop, including distinct phases (PLANNING, HARVESTING, DISCUSSION).
+* Includes the `Lake` class for modeling resource dynamics and `MetricsTracker` for logging simulation data.
+* Key Features:
+    * Lake with capacity, regeneration, and collapse threshold.
+    * Discrete simulation phases with configurable durations.
+    * Metrics tracking for resource levels, agent actions, and simulation outcomes.
 
-Multiple AI agents (Greedy, Random, Rule‑based Sustainable) with path‑finding & unique behaviour
+**Part 2: Basic Agent Behavior**
 
-Simple rule-based agent behaviors with customizable response patterns
+* Introduces the `BaseAgent` class and fundamental agent behaviors (e.g., `FishingBehavior`, `PlanningBehavior`).
+* Implements basic agent actions (e.g., `plan_harvest`, `cast_rod`).
+* Enables agents to perceive their environment and maintain a simple inventory.
+* Key Features:
+    * Modular agent architecture with pluggable behaviors.
+    * Action-based agent control using XML-like tags.
+    * Basic agent perception and memory.
 
-Chat bubbles & global chat feed for agent speech
+**Part 3: Agent Communication and Coordination**
 
-Sidebar UI showing real‑time agent actions, energy & inventory
+* Focuses on enabling agents to communicate and coordinate during the `DISCUSSION` phase.
+* Implements the `CommunicationBehavior` to manage turn-taking and message processing.
+* Introduces prompts to guide agent conversations towards strategic decision-making.
+* Key Features:
+    * Round-robin turn-taking during discussions.
+    * LLM-driven agent communication using `<monologue>` and `<speak>` tags.
+    * Mechanisms for tracking and logging communication.
 
-JSONL logging for sustainability, efficiency & inequality metrics
+**Part 4: Enhanced Agent Cognition**
 
-🚀 Setup
+* Adds more sophisticated cognitive capabilities to agents, including reflection and planning.
+* Implements the `CognitiveCycle` to orchestrate reflection (`Reflect`) and planning (`Plan`).
+* Refines prompts to encourage deeper strategic reasoning and more effective use of past information.
+* Key Features:
+    * Agent reflection on past actions and game state.
+    * LLM-driven plan generation based on reflection.
+    * Framework for iterative agent decision-making.
 
-1  Clone & install
+**Part 5: Data Logging and Analysis**
 
-```bash
-bunx hytopia init --template ai-agents commons-keeper
-cd commons-keeper
-bun install
-```
+* Focuses on the generation of logs and metrics to analyze simulation outcomes.
+* Implements the `MetricsTracker` class to record key data points throughout the simulation.
+* Logs are generated in JSONL format for easy parsing and analysis.
+* Key Metrics and Logging:
+    * Lake survival rate (time until collapse, if any).
+    * Fish stock levels over time.
+    * Total harvest per cycle.
+    * Agent harvest amounts.
+    * Gini coefficient to measure wealth inequality among agents.
+    * Logs of agent actions, communication, and internal thoughts.
 
-2  Run the demo
+**Part 6: Local Setup and Execution**
 
-```bash
-bun --watch index.ts    # opens http://localhost:8080
-```
-
-Join as a player and watch the fishers negotiate (or not!).
-
-🤖 How do agents work?
-
-Agents combine world‑state snapshots and game actions to make decisions.
-
-World‑state representation
-
-Each tick, an agent receives:
-
-* Its own position & energy
-* Nearby entities (fishers, lake)
-* Inventory contents
-* Status of any ongoing actions
-
-This object is used to determine the agent's next action. See `src/BaseAgent.ts#getCurrentState()` for details.
-
-Actions
-
-Agents express intent by outputting XML tags that the game parses:
-
-```xml
-<action type="move" target="Lake" />
-<action type="fish" amount="5" />
-<action type="speak">Let's stick to 5 fish each!</action>
-```
-
-Why XML? It is small, structured, and easy to parse out of text responses.
-
-Agent Responses
-
-Two trigger styles are demonstrated:
-
-* Response Triggers – instant reply when a player talks to an agent.
-* Game Steps – every 30 s idle, the agent wakes up to plan its next move.
-
-Scale from 1 → 100 agents without flooding chat by tweaking the step interval.
-
-📊 Core research questions
-
-* Can self‑interested agents find harvesting norms that keep the lake alive?
-* Which incentives (tax, spoilage, trade) raise cooperative equilibrium?
-
-Run headless sims via:
-
-```bash
-bun run scripts/run-local.ts --ticks 1000 --agents 5 --policy greedy
-```
-
-Logs land in `experiments/<run‑id>/events.jsonl` and can be analysed in DuckDB / Pandas.
+* These instructions detail how to set up and run the "Commons Keeper" simulation locally.
+* **Prerequisites:**
+    * [Bun](https://bun.sh/) (or Node.js/npm) installed.
+    * An OpenAI API key.
+* **Steps:**
+    1.  Clone the repository:
+        ```bash
+        git clone <repository_url>
+        cd commons-keeper
+        ```
+    2.  Install dependencies:
+        ```bash
+        bun install  # Or: npm install
+        ```
+    3.  Create a `.env` file in the project root and add your OpenAI API key:
+        ```
+        OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
+        ```
+    4.  Run the simulation:
+        ```bash
+        bun --watch index.ts  # Or: bun run index.ts
+        ```
+    5.  The simulation will start a local server. You can access it in your browser at `http://localhost:8080`.
 
 🔭 What's next?
-
-* Self‑play PPO to learn quotas automatically
-* Punishment & tax mechanics for institutional enforcement
-* Trading post economy (fish ↔ coins) to study inequality
+* Expand the simulation to include more complex ecological and social factors. Add features like -
+    * Variable regeneration rates.
+    * Spatial distribution of resources.
+    * Agent specialization or roles.
+    * More nuanced social interactions (e.g., trust, reputation).
+* Scale the simulation to larger numbers of agents and longer durations.
+* Focus on in-depth analysis of emergent norms and governance strategies.
 * Superset dashboards for live lake curves & Gini graphs
 
-🪪 License
-
-MIT.  Built with ❤️ on the HYTOPIA SDK.
+ Built with ❤️ using the HYTOPIA SDK.
