@@ -129,8 +129,8 @@ export class CommunicationBehavior implements AgentBehavior {
 
             // Prepare the messages for the LLM
             const messages = [
-                ...buildCommunicationPrompt(agent, world, currentRetry),
-                buildCommunicationUserPrompt(chatHistoryText, currentRetry)
+                ...buildCommunicationPrompt(agent, world),
+                buildCommunicationUserPrompt(agent, world, chatHistoryText, currentRetry)
             ];
 
             // Get response from LLM
@@ -226,7 +226,7 @@ export class CommunicationBehavior implements AgentBehavior {
                         UIService.sendAgentThoughts(playerEntity.player, world.agents);
                     }
                 });
-            }, 5300);
+            }, 10000);
         }
 
         console.log(`[CommunicationBehavior] ${agent.name} ending turn`);

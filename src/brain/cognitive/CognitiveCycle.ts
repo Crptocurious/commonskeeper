@@ -18,10 +18,17 @@ export class CognitiveCycle {
      * Determines if reflection is needed based on:
      * 1. Phase changes
      * 2. Not being in HARVESTING or DISCUSSION phase
+     * 3. Not being in cycle 0
      */
     private shouldReflect(agent: BaseAgent): boolean {
         // Skip reflection during HARVEST phase and COMMUNICATION phase
         if (agent.currentAgentPhase === 'HARVESTING' || agent.currentAgentPhase === 'DISCUSSION') {
+            return false;
+        }
+
+        // Skip reflection during cycle 0
+        const gameWorld = agent.getGameWorld();
+        if (gameWorld.currentCycle === 0) {
             return false;
         }
 
@@ -46,7 +53,8 @@ export class CognitiveCycle {
                 // Skip reflection, proceed directly to planning
                 this.plan.chat(agent, {
                     type: "Environment",
-                    message: trigger
+                    message: trigger,
+                    reflected: false
                 });
                 return;
             }
@@ -63,25 +71,19 @@ export class CognitiveCycle {
                 // Fall back to direct planning without reflection
                 this.plan.chat(agent, {
                     type: "Environment",
-                    message: trigger
+                    message: trigger,
+                    reflected: false
                 });
                 return;
             }
 
-            // Combine reflection with trigger for enhanced planning
-            const enhancedTrigger = `
-Current Reflection:
-${reflection}
 
-Original Trigger:
-${trigger}
-
-Consider the above reflection when deciding your next actions.`;
 
             // Forward to planning with enhanced context
             this.plan.chat(agent, {
                 type: "Environment",
-                message: enhancedTrigger
+                message: reflection,
+                reflected: true
             });
 
         } catch (error) {
@@ -89,7 +91,8 @@ Consider the above reflection when deciding your next actions.`;
             // Fall back to direct planning without reflection
             this.plan.chat(agent, {
                 type: "Environment",
-                message: trigger
+                message: trigger,
+                reflected: false
             });
         }
     }

@@ -3,7 +3,6 @@ import {
 	EntityEvent,
 	Player,
 	Vector3,
-	World,
 	SimpleEntityController,
 	RigidBodyType,
 	SceneUI,
@@ -18,10 +17,10 @@ import { ScratchMemory } from "./brain/memory/ScratchMemory";
 import { UIService } from "./services/UIService";
 
 export interface AgentBehavior {
-	onUpdate(agent: BaseAgent, world: World): void;
+	onUpdate(agent: BaseAgent, world: GameWorld): void;
 	onToolCall(
 		agent: BaseAgent,
-		world: World,
+		world: GameWorld,
 		toolName: string,
 		args: any,
 		player?: Player
@@ -150,10 +149,10 @@ export class BaseAgent extends Entity {
 		return this.behaviors;
 	}
 
-	public spawn(world: World, position: Vector3) {
+	public spawn(world: GameWorld, position: Vector3) {
 		super.spawn(world, position);
 		this.chatUI.load(world);
-		this.currentWorld = world as GameWorld;
+		this.currentWorld = world;
 		this.lastActionTick = this.currentWorld.currentTick;
 	}
 
@@ -207,13 +206,13 @@ export class BaseAgent extends Entity {
 	// }
 
 	public handleToolCall(toolName: string, args: any, player?: Player) {
-		if (!this.world) return;
+		if (!this.currentWorld) return;
 		let results: string[] = [];
 		console.log(`Agent ${this.name} handling tool call:`, toolName, args);
 		this.lastActionTick = this.currentAgentTick;
 
 		// Ensure world is treated as GameWorld to access metricsTracker
-		const gameWorld = this.world as GameWorld;
+		const gameWorld = this.currentWorld;
 
 		// Handle communication actions first
 		// Commented because we are only allowing the communication behaviour during townhall phase.
@@ -251,7 +250,7 @@ export class BaseAgent extends Entity {
 			if (b.onToolCall) {
 				const result = b.onToolCall(
 					this,
-					this.world!,
+					this.currentWorld!,
 					toolName,
 					args,
 					player
@@ -304,6 +303,13 @@ export class BaseAgent extends Entity {
 		this.chatUI.setState(state);
 	}
 
+	public getGameWorld(): GameWorld {
+		if (!this.currentWorld) {
+			throw new Error('Agent world not initialized');
+		}
+		return this.currentWorld;
+	}
+
 	public getCompleteState(): CompleteState {
 		const agentState: AgentState = {
 			name: this.name,
@@ -334,8 +340,8 @@ export class BaseAgent extends Entity {
 	}
 
 	public getNearbyEntities(radius: number = 10): NearbyEntity[] {
-		if (!this.world) return [];
-		return this.world.entityManager
+		if (!this.currentWorld) return [];
+		return this.currentWorld.entityManager
 			.getAllEntities()
 			.filter((entity) => entity !== this)
 			.map((entity) => {

@@ -4,6 +4,8 @@ import { Player, PlayerEntity } from "hytopia";
 import type { AgentBehavior } from "../../BaseAgent";
 import { BaseLLM } from "../BaseLLM";
 import { buildPlanningPhaseSystemPrompt, buildPlanUserMessage } from "../../config/prompts";
+import type { GameWorld } from "../../types/GameState";
+import { UIService } from "../../services/UIService";
 
 type MessageType = "Player" | "Environment" | "Agent";
 
@@ -13,6 +15,7 @@ export interface ChatOptions {
     message: string;
     player?: Player;
     agent?: BaseAgent;
+    reflected?: boolean;
 }
 
 export class Plan {
@@ -65,20 +68,18 @@ export class Plan {
     private async processChatMessage(agent: BaseAgent, options: ChatOptions) {
         const { type, message, player, agent: sourceAgent } = options;
         try {
-            // Get complete state from agent
-            const completeState = agent.getCompleteState();
-
-            // Get recent memories
-            const recentMemories = agent.getScratchMemory().getRecentActionMemories();
-
             // Build prompt with complete state
-            const userMessage = buildPlanUserMessage(options, completeState, recentMemories);
+            const userMessage = buildPlanUserMessage(agent, options);
+            const systemPrompt = buildPlanningPhaseSystemPrompt(this.systemPrompt, agent, agent.getGameWorld());
+
+            // console.log(`[${agent.name}] Planning Phase System Prompt:\n${systemPrompt}`);
+            // console.log(`[${agent.name}] Planning Phase User Message:\n${userMessage}`);
 
             // Construct messages directly without separate convert function
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: "system",
-                    content: buildPlanningPhaseSystemPrompt(this.systemPrompt, agent)
+                    content: systemPrompt
                 },
                 {
                     role: "user",
@@ -113,18 +114,8 @@ export class Plan {
                         .map((e) => (e as PlayerEntity).player);
 
                     allPlayers.forEach((player) => {
-                        player.ui.sendData({
-                            type: "agentThoughts",
-                            agents: agent.world!.entityManager.getAllEntities()
-                                .filter((e): e is BaseAgent => e instanceof BaseAgent)
-                                .map((e) => {
-                                    return {
-                                        name: e.name,
-                                        lastThought: e.getLastMonologue() || "Idle",
-                                        inventory: Array.from(e.inventory.values())
-                                    };
-                                }),
-                        });
+                        UIService.sendAgentThoughts(player, agent.world!.entityManager.getAllEntities()
+                            .filter((e): e is BaseAgent => e instanceof BaseAgent));
                     });
                 }
             }
@@ -137,7 +128,7 @@ export class Plan {
             const actionType = actionMatch[1];
             const actionBody = actionMatch[2]?.trim();
             try {
-                console.log("Action:", actionType, actionBody);
+                // console.log("Action:", actionType, actionBody);
                 if (actionType) {
                     // Store state before action
                     const stateBeforeAction = agent.getCompleteState();

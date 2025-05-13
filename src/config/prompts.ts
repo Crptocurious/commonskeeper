@@ -13,22 +13,17 @@ import * as Constants from "../config/constants"; // Adjust path as needed
 // ensuring CORE_RULES uses constants and reflects Wealth=Fish goal.
 const CORE_RULES = (constants: typeof Constants) => `
 **Core Game Rules:**
-* **Goal:** Maximize your long-term **Total Fish Harvested** (Wealth). This depends entirely on lake survival.
-* **Lake Capacity:** ${constants.SIMULATION_CONFIG.LAKE_CAPACITY} fish.
-* **Lake Collapse:** If stock drops to **${constants.SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD} fish or less** after harvest, the lake collapses **PERMANENTLY**. No more fish can be harvested, ending the simulation for everyone (failure).
-* **Regeneration:** Lake stock **doubles** at the start of each PLANNING phase, capped at ${constants.SIMULATION_CONFIG.LAKE_CAPACITY}. No regeneration if collapsed.
-`;
-
-const OUTPUT_FORMATTING = `
-**Output Format:**
-* Use <monologue>...</monologue> for your internal reasoning *before* any action. Explain your thought process, linking it to known game rules, your wealth goal, sustainability risks (based on reports/inferred stock), and potential cooperation/competition.
-* Use the specific action tag required for the current phase objective.
-* Adhere strictly to XML format. Use minimal text outside tags.
+**Goal:** Maximize your long-term **Total Fish Harvested** (Wealth). This depends entirely on lake survival.
+**Lake Capacity:** ${constants.SIMULATION_CONFIG.LAKE_CAPACITY} fish. The lake under no condition will exceed this capacity. It is a hard limit.
+**Lake Collapse:** If stock drops to **${constants.SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD} fish or less** after harvest, the lake collapses **PERMANENTLY**. No more fish can be harvested, ending the simulation for everyone (failure).
+**Regeneration:** Lake stock **doubles** at the start of each PLANNING phase, capped at ${constants.SIMULATION_CONFIG.LAKE_CAPACITY}. No regeneration if collapsed.
+**Total Agents:** ${constants.AGENT_CONFIGS.length} agents (${constants.AGENT_CONFIGS.map(config => config.name).join(", ")}) share the lake resources and harvest at the same time. When deciding your harvest amount, you may want to consider this point.
+**Cycle Sequence:**: Planning -> Harvest -> Discussion.
 `;
 
 // This is also the custom prompt for planning phase
 export function buildCommonAgentPrompt(agentName: string): string {
-    return `You are ${agentName}, a fisherman. You are a practical and thoughtful person who understands the importance of sustainable fishing. You care about the long-term health of the lake and believe in working together with other fishermen to ensure everyone can make a living while preserving the resource for the future.`;
+    return `You are ${agentName}, a fisherman harvesting fishes.`;
 }
 
 // --- Planning Phase Prompts ---
@@ -41,173 +36,133 @@ function getFishingSequenceInfo(agent: BaseAgent, world: GameWorld | undefined):
     if (!fishingBehavior) return '';
 
     // Get current cycle number safely
-    const currentCycle = world.currentCycle || 0;
+    const currentCycle = world.currentCycle;
+    if (currentCycle === undefined) return '';
 
     // Calculate sequences for different cycles
-    const lastCycleSequence = fishingBehavior.getCurrentCycleSequence({ ...world, currentCycle: Math.max(0, currentCycle - 1) } as GameWorld);
+    const lastCycleSequence = fishingBehavior.getCurrentCycleSequence({ ...world, currentCycle: currentCycle - 1 } as GameWorld);
     const nextCycleSequence = fishingBehavior.getCurrentCycleSequence({ ...world, currentCycle: currentCycle + 1 } as GameWorld);
+
+    // Return null if any sequence is missing
+    if (!lastCycleSequence || !nextCycleSequence) return '';
     
     return `
 **Fishing Sequence Information:**
-* Last Cycle's Order (Cycle ${Math.max(0, currentCycle - 1)}): [${lastCycleSequence.join(' → ')}]
+Fishing occurs in the round-robin order of the agents.
+* Last Cycle's Order (Cycle ${currentCycle - 1}): [${lastCycleSequence.join(' → ')}]
 * Next Cycle's Order (Cycle ${currentCycle + 1}): [${nextCycleSequence.join(' → ')}]`;
 }
 
 export function buildPlanningPhaseSystemPrompt(customPrompt: string, agent: BaseAgent, world: GameWorld): string {
     const constants = Constants;
-    const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
+    const fishingSequenceInfo = world.currentCycle === 0 ? 'This is the first cycle. So, no previous cycle information is available.' : getFishingSequenceInfo(agent, world);
     const phaseInstructions = `
-**Current Phase: PLANNING (${constants.TIME_CONFIG.PLANNING_DURATION_MINUTES} mins)**
+**Current Phase: PLANNING**
 * **Objective:** Decide your **intended harvest amount (N)** for the upcoming Harvest phase based on **inferred** lake health and strategic goals. You **do not know the exact current lake stock**.
 * **Available Information:** Lake Capacity, Collapse Threshold, Regeneration Rule, your total harvest so far, others' *reported* harvests from the last cycle (if available), summary of the last Discussion (if available).
 ${fishingSequenceInfo}
-* **Your Task:** Output **ONE** \`<action type="plan_harvest">{ "amount": N }</action>\` tag (where N is the integer amount you intend to try and catch).
-* **Reasoning:** Justify N in your monologue. Estimate the current lake stock based on known rules and reported collective harvest from the previous cycle. Assess the risk of collapse based on your estimate and your planned harvest + anticipated harvest from others. Balance maximizing your potential wealth against the high risk of permanent collapse.
-* **Available Actions:** ONLY \`<action type="plan_harvest">{ "amount": N }</action>\`. After outputting the plan, you will sit idle until the next phase.
-* **Action Syntax:**
-    <action type="plan_harvest">{ "amount": N }</action> `;
 
-    return `You are an AI Agent role-playing as a fisherman.
+**Required Response Format:**
+1. First, use <monologue>...</monologue> to explain your thought process about choosing harvest amount N. Include:
+   - Your estimate of current lake stock based on known rules and reported harvests
+   - Risk assessment for lake collapse
+   - Strategic considerations (sustainability vs wealth maximization)
+   - Reasoning for your chosen N value
+2. Then, output <action type="plan_harvest">{ "amount": N }</action> tag with your chosen harvest amount
+
+Example format:
+<monologue>Based on last cycle's reports and regeneration rules, I estimate the lake has around X fish. Given this and the collapse threshold of Y, I think harvesting N fish balances risk and reward because...</monologue>
+<action type="plan_harvest">{ "amount": N }</action>`;
+
+    return `
+${customPrompt}
 ${CORE_RULES(constants)}
-${OUTPUT_FORMATTING}
-${phaseInstructions}
-**Your Specific Role & Strategy:**
-${customPrompt}`.trim();
+${phaseInstructions}`.trim();
 }
-
-// --- Harvesting Phase ---
-// No LLM prompt needed for standard harvesting. Agent executes based on stored plan N.
-
-// --- Discussion Phase Prompts ---
-
-// export function buildDiscussionPhaseSystemPrompt(customPrompt: string, agent: BaseAgent): string {
-//     const constants = Constants;
-//     const phaseInstructions = `
-// **Current Phase: DISCUSSION (${constants.TIME_CONFIG.DISCUSSION_DURATION_MINUTES} mins)**
-// * **Objective:** Communicate with other agents at the townhall (movement is automatic). Share results accurately, discuss strategies for the *next* cycle, coordinate to ensure sustainability, express concerns, or propose agreements based on the *reported* outcomes of the last harvest.
-// * **Your Tasks:**
-//     1.  **(Required Early)** Report your actual catch from the *last* Harvest phase using ONE \`<report harvest=X />\` tag (where X is the integer amount you successfully caught). Accuracy is important.
-//     2.  Participate in the discussion using \`<action type="townhall_speak">{"message": "..."}\</action>\`. Respond thoughtfully to others. Focus on sustainability, coordination, and interpreting reported results to plan for the future.
-// * **Available Actions:** ONLY \`<report harvest=X />\` and \`<action type="townhall_speak">\`. You cannot move via commands or speak locally during this phase.
-// * **Action Syntax:**
-//     <report harvest=X /> ${buildSpeakPrompt().split('\\n')[2]} `; // Assumes buildSpeakPrompt structure from previous examples
-
-//     return `You are an AI Agent role-playing as a fisherman.
-// ${CORE_RULES(constants)}
-// ${OUTPUT_FORMATTING}
-// ${phaseInstructions}
-// **Your Specific Role & Strategy:**
-// ${customPrompt}`.trim();
-// }
 
 // --- Universal User Message Builder (Context Provider) ---
 
-export function buildPlanUserMessage(
-    options: ChatOptions, // The trigger
-    completeState: CompleteState, // Current agent state snapshot
-    recentMemories: any[], // Recent actions taken by this agent
-    // Context needed for PLANNING/REFLECTION (Must EXCLUDE actual currentStock)
-    planningContext?: {
-        lastHarvestReports?: Record<string, number>, // AgentName -> FishCaught map
-        discussionSummary?: string
-    }
-): string {
-    let prefix = "";
-    if (options.type === "Environment") prefix = "ENVIRONMENT: ";
-    else if (options.type === "Player" && options.player) prefix = `[${options.player.username}]: `;
-    else if (options.type === "Agent" && options.agent) prefix = `[${options.agent.name} (AI)]: `;
+export function buildPlanUserMessage(agent: BaseAgent, options: ChatOptions, reflected: boolean = false): string {
+    const completeState = agent.getCompleteState();
+    const lakeState = completeState.game.lake;
 
-    // Prepare state snapshot, REMOVING sensitive info based on phase
-    const currentPhase = completeState.game.phase.currentPhase;
-    let gameContextForLLM: any = { ...completeState.game };
-    let agentContextForLLM: any = { ...completeState.agent };
+    const lastHarvest = agent.getScratchMemory().getFishingMemory().lastHarvestAmounts.get(agent.name) || 0;
+    const totalHarvest = agent.getScratchMemory().getFishingMemory().totalHarvestAmounts.get(agent.name) || 0;
 
-    if (currentPhase === 'PLANNING') {
-        // Remove currentStock for PLANNING phase LLM calls
-        delete gameContextForLLM.lake.currentStock;
-        // Add planning-specific context if available
-        if (planningContext?.lastHarvestReports) {
-            gameContextForLLM.lastHarvestReports = planningContext.lastHarvestReports;
-        }
-        if (planningContext?.discussionSummary) {
-            gameContextForLLM.discussionSummary = planningContext.discussionSummary;
-        }
-        // Remove potentially sensitive state not needed for planning
-        delete agentContextForLLM.position;
-        delete agentContextForLLM.nearbyEntities;
-    } else if (currentPhase === 'DISCUSSION') {
-        // Discussion needs agent state (e.g., total harvest for reporting context) but maybe not exact position/nearby
-        // Lake stock IS known implicitly because harvest just ended, but focus is on reports.
-        // Let's still include lake state *except* stock for consistency? Or include full state.
-        // Decision: Include full state for Discussion as context, but prompt focuses on reporting/talking.
-    } else if (currentPhase === 'HARVESTING') {
-        // Include state relevant to deciding if turn allows cast_rod (if LLM was used here)
-        // e.g., turn info, progress towards plan N. (But we decided LLM is not core here)
+    console.log(`Lake State: ${JSON.stringify(lakeState, null, 2)}`);
+
+    // Build message sections conditionally
+    let message = `You are ${agent.name}.\n${CORE_RULES(Constants)}\n\nLake State:\n${JSON.stringify(lakeState, null, 2)}\n\n`;
+
+    // Add last harvest if available
+    if (lastHarvest) {
+        message += `Your Last Harvest:\n${lastHarvest}\n\n`;
     }
 
-    // Ensure inventory (fish) is only shown if relevant (Harvest/Discussion report context)
-    // Since fish are converted end of Harvest, inventory should usually be empty unless mid-harvest state needed.
-    // For simplicity, maybe always show inventory but prompt ignores it if empty/irrelevant?
-    // Decision: Keep inventory in Agent State JSON for now.
+    // Add total harvest if available
+    if (totalHarvest) {
+        message += `Your Total Harvest:\n${totalHarvest}\n\n`;
+    }
 
-    return `${prefix}${options.message}
+    // Add reflection thoughts if available
+    if (reflected) {
+        message += `Reflection thoughts:\n${options.message}\n\n`;
+    }
 
-=== Agent State (Tick: ${completeState.game.lastUpdateTick}) ===
-${JSON.stringify(agentContextForLLM, null, 2)}
+    message += `Now, you need to plan your next action.
+<monologue>Thoughts of planning about the lake state, your harvest, reflection thoughts and the reasoning for your next action.</monologue>
+<action type="plan_harvest">{ "amount": N }</action>
 
-=== Game State ===
-${JSON.stringify(gameContextForLLM, null, 2)}
+Remember to strictly use the correct <monologue>...</monologue> and <action type="plan_harvest">...</action> tags.
+All these 4 tags must be used in correct order.`;
 
-=== Recent Action History (Latest First) ===
-${JSON.stringify(recentMemories, null, 2)}`;
+    return message;
 }
+
+// TODO: Add recent action history in above prompt
+// === Recent Action History (Latest First) ===
+// ${JSON.stringify(recentMemories, null, 2)}
 
 // --- Reflection Phase Prompts ---
 
 export function buildReflectSystemPrompt(): string {
     // Same as before - focuses the task
-    return `You are an AI agent analyzing your performance and the simulation state in a multiplayer fishing game. Your goal is long-term wealth (Total Fish Harvested) and lake sustainability. Focus on identifying trends, risks (especially collapse), opportunities for cooperation/efficiency, and potential strategy adjustments based ONLY on the provided state information. Provide concise, actionable insights.`;
+    return `You are an AI agent analyzing your performance and the simulation state in a fishing simulation. Your goal is long-term wealth (Total Fish Harvested) and lake sustainability. Focus on identifying trends, risks (especially collapse), opportunities for cooperation/efficiency, and potential strategy adjustments based ONLY on the provided state information. Provide concise, actionable insights.`;
 }
 
-export function buildReflectUserMessage(agentName: string, completeState: CompleteState, townhallHistory: TownhallHistory): string {
+export function buildReflectUserMessage(agent: BaseAgent): string {
     const constants = Constants;
-    // REFLECTION ALSO DOES NOT KNOW CURRENT STOCK
-    let gameContextForLLM: any = { ...completeState.game };
-    delete gameContextForLLM.lake.currentStock; // Remove current stock knowledge
 
-    // Add historical/reported data if available in completeState.game
-    const lastReports = gameContextForLLM.lastHarvestReports ? JSON.stringify(gameContextForLLM.lastHarvestReports) : "Not available";
+    const lakeState = agent.getCompleteState().game.lake;
+    const lastHarvest = agent.getScratchMemory().getFishingMemory().lastHarvestAmounts.get(agent.name) || 0;
+    const totalHarvest = agent.getScratchMemory().getFishingMemory().totalHarvestAmounts.get(agent.name) || 0;
+
+    const townhallHistory = agent.getScratchMemory().getTownhallHistory();
     const chatHistory = townhallHistory.messages.map(entry => `[${entry.agentName}]: ${entry.message}`).join('\n');
 
-    return `You are ${agentName}. Reflect on the situation based on information up to tick ${completeState.game.lastUpdateTick}.
+    return `You are ${agent.name}.
 
-**Simulation Rules Reminder:**
-* Goal: Maximize long-term **Total Fish Harvested** (depends on lake survival).
-* Lake Capacity: ${constants.SIMULATION_CONFIG.LAKE_CAPACITY}, Collapse Threshold: ${constants.SIMULATION_CONFIG.LAKE_COLLAPSE_THRESHOLD} (Permanent!)
-* Regeneration: Doubles stock each cycle (start of PLANNING), max capacity.
-* Phases: PLANNING (Plan Harvest N), HARVESTING (Attempt Harvest N, turn-based), DISCUSSION (Report catch X, coordinate).
+${CORE_RULES(constants)}
 
-**Available Information:**
+Lake State:
+${JSON.stringify(lakeState, null, 2)}
 
-=== Your Agent State ===
-${JSON.stringify(completeState.agent, null, 2)}
+Your Last Harvest:
+${lastHarvest}
 
-=== Known Game State (Current Stock UNKNOWN) ===
-${JSON.stringify(gameContextForLLM, null, 2)}
-
-=== Last Cycle's Harvest Reports ===
-${lastReports}
+Your Total Harvest:
+${totalHarvest}
 
 === Recent Townhall Discussion ===
 ${chatHistory}
 
 **Reflection Task:** Analyze the available information. Provide concise insights regarding:
-1.  **Lake Sustainability Estimate:** Based on known rules (Capacity, Threshold, Regeneration) and the *reported* total harvest from the last cycle (${lastReports}), estimate the lake's health and the risk level for collapse. **Do not assume you know the current exact stock.**
+1.  **Lake Sustainability Estimate:** Based on known rules (Capacity, Threshold, Regeneration) and the *reported* total harvest from the last cycle, estimate the lake's health and the risk level for collapse. **Do not assume you know the current exact stock.**
 2.  **Your Performance:** Your current Total Fish Harvested? Success in achieving planned harvest last cycle (compare plan to report)? Appropriateness of your previous plan(s) given the *reported* outcomes?
 3.  **Group Dynamics:** Evidence of cooperation (e.g., reports align with discussions, low reported harvests)? Competition (e.g., high reported harvests, disagreements)? Free-riding (e.g., mismatch between discussion and reports)?
 4.  **Strategy Adjustment:** Based on your estimated risk and group dynamics, suggest specific adjustments for your next PLANNING phase (e.g., "Estimate stock is low, plan to harvest only Z fish", "Propose a lower collective limit during Discussion", "Need to verify Agent Y's reports").
 
-Output only your reflection insights.`;
+Output only your reflection insights in points.`;
 }
 
 
@@ -232,28 +187,13 @@ export function buildSpeakPrompt(): string {
 }
 
 // --- Communication Phase Prompts ---
-export function buildCommunicationPrompt(agent: BaseAgent, world: GameWorld, currentRetry: number = 0): ChatCompletionMessageParam[] {
+export function buildCommunicationPrompt(agent: BaseAgent, world: GameWorld): ChatCompletionMessageParam[] {
     const constants = Constants;
-    const fishingMemory = agent.getScratchMemory().getFishingMemory();
-    const cycleHarvest = fishingMemory.harvestAmounts.get(agent.name) || 0;
-    const totalHarvest = fishingMemory.totalHarvestAmounts.get(agent.name) || 0;
-    const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
-
-    console.log(`[CommunicationPrompt] Fishing Sequence Info: ${fishingSequenceInfo}`);
-    console.log(`[CommunicationPrompt] ${agent.name} has harvested ${cycleHarvest} fish this cycle and ${totalHarvest} fish in total.`);
-
     return [
         {
             role: "system",
             content: `You are ${agent.name}, an AI agent in a multi-agent fishing environment.
-
 ${CORE_RULES(constants)}
-
-Your Harvest Information:
-* Current Cycle Harvest: ${cycleHarvest} fish
-* Total Harvest (all cycles): ${totalHarvest} fish
-
-${fishingSequenceInfo}
 
 During townhall discussions, you engage with other agents to discuss about fish harvesting.
 
@@ -274,16 +214,40 @@ Rules:
 - Never use these tags more than once
 - Never include one tag inside another
 - Never write messages outside these tags
-
-Be concise and constructive in your communication.${currentRetry > 0 ? '\n\nYOUR PREVIOUS RESPONSE DID NOT MATCH THE REQUIRED FORMAT. PLEASE ENSURE YOU USE BOTH <monologue> AND <speak> TAGS IN THE CORRECT ORDER.' : ''}`
+`
         }
     ];
 }
 
-export function buildCommunicationUserPrompt(chatHistoryText: string, currentRetry: number = 0): ChatCompletionMessageParam {
+export function buildCommunicationUserPrompt(agent: BaseAgent, world: GameWorld, chatHistoryText: string, currentRetry: number = 0): ChatCompletionMessageParam {
+    const fishingMemory = agent.getScratchMemory().getFishingMemory();
+    const cycleHarvest = fishingMemory.harvestAmounts.get(agent.name) || 0;
+    const totalHarvest = fishingMemory.totalHarvestAmounts.get(agent.name) || 0;
+    const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
+    const lakeState = agent.getCompleteState().game.lake;
+
     return {
         role: "user",
-        content: `Here's the current discussion:\n\n${chatHistoryText}\n\nIt's your turn to speak. Respond using the required format with both <monologue> and <speak> tags.${currentRetry > 0 ? ' Make sure to follow the format exactly!' : ''}`
+        content: `Here's your current state and the discussion:
+
+Your Harvest Information:
+* Current Cycle Harvest: ${cycleHarvest} fish
+* Total Harvest (all cycles): ${totalHarvest} fish
+
+${fishingSequenceInfo}
+
+Lake State:
+${JSON.stringify(lakeState, null, 2)}
+
+Current Discussion:
+${chatHistoryText}
+
+It's your turn to speak. Respond using the required format with both <monologue> and <speak> tags.
+Example of correct format:
+<monologue>I think I should ask the other agents about harvesting.</monologue>
+<speak>Hey, let's talk about harvesting.</speak>
+
+${currentRetry > 0 ? ' Make sure to follow the format exactly!' : ''}`
     };
 }
 

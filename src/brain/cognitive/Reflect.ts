@@ -10,11 +10,6 @@ export class Reflect {
     }
 
     public async reflect(agent: BaseAgent): Promise<string | undefined> {
-        // Get complete state directly from agent
-        const completeState = agent.getCompleteState();
-        
-        // Get townhall history from scratch memory
-        const townhallHistory = agent.getScratchMemory().getTownhallHistory();
         
         // Generate reflection using LLM
         const messages = [
@@ -24,7 +19,7 @@ export class Reflect {
             },
             {
                 role: "user" as const,
-                content: buildReflectUserMessage(agent.name, completeState, townhallHistory)
+                content: buildReflectUserMessage(agent)
             }
         ];
 
