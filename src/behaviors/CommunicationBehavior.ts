@@ -23,6 +23,18 @@ export class CommunicationBehavior implements AgentBehavior {
         this.llm = new BaseLLM();
     }
 
+    // Static method to reset shared history
+    public static resetSharedHistory() {
+        CommunicationBehavior.sharedHistory = {
+            messages: [],
+            isDiscussionInProgress: false,
+            currentSpeakerIndex: 0,
+            lastUpdateTick: 0
+        };
+        CommunicationBehavior.lastLoggedSpeaker = null;
+        console.log('[CommunicationBehavior] Shared history reset');
+    }
+
     private syncTownhallHistoryToAllAgents(world: GameWorld, history: TownhallHistory) {
         // Only log when discussion state changes
         if (history.isDiscussionInProgress !== CommunicationBehavior.sharedHistory.isDiscussionInProgress ||
