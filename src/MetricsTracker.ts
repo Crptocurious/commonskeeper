@@ -13,6 +13,9 @@ interface SimulationMetricsReport {
     harvest_efficiency: number; // Calculated over survived turns
     final_wealth_inequality_gini: number; // Renamed from final_harvest_gini_coefficient
     total_wealth_generated?: number; // New field
+    total_gain_per_agent?: { [agentName: string]: number }; // New field for R_i
+    mean_gain_per_agent?: number; // Metric: Gain (mean R_i)
+    over_usage_fraction?: number; // Metric: Over-usage
     fish_stock_time_series: { tick: number; stock: number }[];
     total_harvest_per_cycle_time_series: { cycle: number; harvest: number }[];
     townhall_messages_per_cycle_time_series: { cycle: number; messages: number }[];
@@ -107,6 +110,10 @@ export class MetricsTracker {
     private currentCycleNumber: number = 0; // Track current cycle
     private reportGenerated: boolean = false; // Flag to prevent multiple report generations
 
+    // For Over-usage metric
+    private greedyMovesCount: number = 0;
+    private totalHarvestActionsCount: number = 0;
+
 
     constructor(runIdPrefix: string = "sim", configuredDurationTicks: number) {
         this.runId = `${runIdPrefix}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
@@ -130,6 +137,9 @@ export class MetricsTracker {
         this.currentCycleHarvest += amount;
         const currentTotal = this.totalHarvestPerAgent.get(agentId) || 0;
         this.totalHarvestPerAgent.set(agentId, currentTotal + amount);
+        // Note: To fully implement Over-usage, totalHarvestActionsCount should be incremented here
+        // or recordHarvestActionDetails should be the primary method called during harvest.
+        // For now, assuming recordHarvestActionDetails will also be called.
     }
 
     public recordLakeRegeneration(amount: number): void {
@@ -206,6 +216,23 @@ export class MetricsTracker {
         }
     }
 
+    /**
+     * Records details of a harvest action, specifically for the Over-usage metric.
+     * This method should be called by the behavior executing the harvest (e.g., FishingBehavior)
+     * after determining the instantaneousSustainableThreshold.
+     * @param agentId The ID of the agent performing the harvest.
+     * @param harvestedAmount The amount of fish the agent actually harvested.
+     * @param instantaneousSustainableThreshold The calculated sustainable harvest amount at that instant.
+     */
+    public recordHarvestActionDetails(agentId: string, harvestedAmount: number, instantaneousSustainableThreshold: number): void {
+        this.totalHarvestActionsCount++;
+        if (harvestedAmount > instantaneousSustainableThreshold) {
+            this.greedyMovesCount++;
+            // Optional: Log greedy move specifically, e.g.:
+            // console.log(`METRICS: Agent ${agentId} made a greedy move. Harvested: ${harvestedAmount}, Sustainable: ${instantaneousSustainableThreshold}`);
+        }
+    }
+
 
     // --- Calculation Methods ---
 
@@ -229,6 +256,13 @@ export class MetricsTracker {
         return calculateGini(harvestData);
     }
 
+    private calculateOverUsageFraction(): number {
+        if (this.totalHarvestActionsCount === 0) {
+            return 0; // Avoid division by zero if no harvest actions were recorded
+        }
+        return this.greedyMovesCount / this.totalHarvestActionsCount;
+    }
+
 
     // --- Output/Reporting ---
 
@@ -248,26 +282,38 @@ export class MetricsTracker {
         }
 
         // Calculate total wealth generated
-        let totalWealth = 0;
-        for (const harvest of this.totalHarvestPerAgent.values()) {
-            totalWealth += harvest;
-        }
+        const totalWealthGenerated = Array.from(this.totalHarvestPerAgent.values()).reduce((sum, current) => sum + current, 0);
 
-        const finalMetrics: SimulationMetricsReport = {
+        // Prepare total gain per agent for the report
+        const totalGainPerAgentReport: { [agentName: string]: number } = {};
+        console.log("\n--- Simulation End: Total Gain per Agent (R_i) ---");
+        for (const [agentName, totalGain] of this.totalHarvestPerAgent.entries()) {
+            totalGainPerAgentReport[agentName] = totalGain;
+            console.log(`${agentName}: ${totalGain} fish`);
+        }
+        const averageGain = this.totalHarvestPerAgent.size > 0 ? totalWealthGenerated / this.totalHarvestPerAgent.size : 0;
+        console.log(`Average Gain per Agent: ${averageGain.toFixed(2)} fish`);
+        console.log("-----------------------------------------------------\n");
+
+
+        const report: SimulationMetricsReport = {
             run_id: this.runId,
-            simulation_duration_ticks: this.totalSimulationDurationTicks,
+            simulation_duration_ticks: endTick - this.simulationStartTime,
             outcome: this.outcome,
             survival_time_ticks: this.calculateSurvivalTime(),
             final_fish_stock: this.lastKnownFishStock,
             harvest_efficiency: this.calculateEfficiency(),
             final_wealth_inequality_gini: this.calculateInequality(),
-            total_wealth_generated: totalWealth,
+            total_wealth_generated: totalWealthGenerated,
+            total_gain_per_agent: totalGainPerAgentReport,
+            mean_gain_per_agent: averageGain,
+            over_usage_fraction: this.calculateOverUsageFraction(),
             fish_stock_time_series: this.fishStockTimeSeries,
             total_harvest_per_cycle_time_series: this.totalHarvestPerCycleTimeSeries,
             townhall_messages_per_cycle_time_series: this.townhallMessagesPerCycleTimeSeries,
         };
 
-        const reportJson = JSON.stringify(finalMetrics, null, 2); // Pretty print JSON
+        const reportJson = JSON.stringify(report, null, 2); // Pretty print JSON
 
         // Log to console
         console.log(`
