@@ -23,25 +23,25 @@ export class Lake extends EventEmitter {
    */
   constructor(capacity: number, initialStock: number, regenRate: number, currentTick: number) {
     super();
-    this.capacity = capacity;
-    this.currentStock = Math.min(initialStock, capacity); // Ensure initial stock doesn't exceed capacity
+    this.capacity = Math.floor(capacity);
+    this.currentStock = Math.floor(Math.min(initialStock, capacity)); // Ensure initial stock doesn't exceed capacity and is an integer
     this.regenRate = regenRate;
     this.lastUpdateTick = currentTick;
 
     // Initialize collapse state based on initial stock
-    if (this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
+    if (this.currentStock <= Math.floor(this.capacity * this.COLLAPSE_THRESHOLD_PERCENT)) {
       console.warn(`Lake initialized below or at collapse threshold (${this.COLLAPSE_THRESHOLD_PERCENT * 100}%). Initial stock: ${this.currentStock}. Collapsing immediately.`);
       this._isCollapsed = true;
       this.currentStock = 0; // Set stock to 0 if starting collapsed
       // Log initial collapse if starting below threshold
-       logEvent({
-           type: "lake_collapse",
-           reason: "Initial stock below threshold",
-           initialStock: initialStock, // Log the stock it started with
-           threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
-           capacity: this.capacity,
-           lastUpdateTick: this.lastUpdateTick
-       });
+      logEvent({
+          type: "lake_collapse",
+          reason: "Initial stock below threshold",
+          initialStock: initialStock, // Log the stock it started with
+          threshold: Math.floor(this.capacity * this.COLLAPSE_THRESHOLD_PERCENT),
+          capacity: this.capacity,
+          lastUpdateTick: this.lastUpdateTick
+      });
     } else if (this.currentStock <= 0) {
         // Handle case where initial stock is <= 0 but somehow above threshold (unlikely with threshold > 0)
         console.warn("Lake initialized with zero or negative stock. Collapsing immediately.");
@@ -78,12 +78,12 @@ export class Lake extends EventEmitter {
     // Logistic growth rule
     if (this.currentStock > 0) { // Only grow if there's stock
         const r = this.intrinsicGrowthRate; // Use class member
-        const newFish = r * this.currentStock * (1 - this.currentStock / this.capacity);
+        const newFish = Math.floor(r * this.currentStock * (1 - this.currentStock / this.capacity));
         
         // Ensure stock does not exceed capacity and handle potential negative growth if stock > capacity (though unlikely with current logic)
-        let stockAfter = this.currentStock + newFish;
+        let stockAfter = Math.floor(this.currentStock + newFish);
         if (stockAfter > this.capacity) {
-            stockAfter = this.capacity;
+            stockAfter = Math.floor(this.capacity);
         } else if (stockAfter < 0) { // Should not happen if currentStock starts <= capacity
             stockAfter = 0;
         }
@@ -101,7 +101,6 @@ export class Lake extends EventEmitter {
             // If stock decreased for other reasons (e.g. float precision, or became 0)
             regeneratedAmount = 0; 
         }
-
 
         this.lastUpdateTick = currentTick;
     }
@@ -136,8 +135,8 @@ export class Lake extends EventEmitter {
    */
   checkCollapse(currentTick: number): void {
       // Check only if not already collapsed
-      if (!this._isCollapsed && this.currentStock <= this.capacity * this.COLLAPSE_THRESHOLD_PERCENT) {
-          console.warn(`Lake collapsed! Stock (${this.currentStock}) reached collapse threshold (${this.capacity * this.COLLAPSE_THRESHOLD_PERCENT}).`);
+      if (!this._isCollapsed && this.currentStock <= Math.floor(this.capacity * this.COLLAPSE_THRESHOLD_PERCENT)) {
+          console.warn(`Lake collapsed! Stock (${this.currentStock}) reached collapse threshold (${Math.floor(this.capacity * this.COLLAPSE_THRESHOLD_PERCENT)}).`);
           this._isCollapsed = true;
           this.currentStock = 0; // Permanently deplete stock on collapse
           this.lastUpdateTick = currentTick;
@@ -146,7 +145,7 @@ export class Lake extends EventEmitter {
           logEvent({
               type: "lake_collapse",
               reason: "Stock dropped below threshold after harvest",
-              threshold: this.capacity * this.COLLAPSE_THRESHOLD_PERCENT,
+              threshold: Math.floor(this.capacity * this.COLLAPSE_THRESHOLD_PERCENT),
               stockAtCollapseTrigger: this.currentStock, // Will be 0 now
               capacity: this.capacity,
               lastUpdateTick: this.lastUpdateTick
@@ -178,8 +177,8 @@ export class Lake extends EventEmitter {
         return 0;
     }
 
-    const harvestedAmount = Math.min(amount, this.currentStock);
-    this.currentStock -= harvestedAmount;
+    const harvestedAmount = Math.floor(Math.min(amount, this.currentStock));
+    this.currentStock = Math.floor(this.currentStock - harvestedAmount);
     
     // Check for collapse after reducing stock
     this.checkCollapse(currentTick);
