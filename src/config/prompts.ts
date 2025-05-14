@@ -85,26 +85,30 @@ ${phaseInstructions}`.trim();
 export function buildPlanUserMessage(agent: BaseAgent, options: ChatOptions, reflected: boolean = false): string {
     const completeState = agent.getCompleteState();
     const lakeState = completeState.game.lake;
+    const world = agent.getGameWorld();
 
-    const lastHarvest = agent.getScratchMemory().getFishingMemory().lastHarvestAmounts.get(agent.name) || 0;
-    const totalHarvest = agent.getScratchMemory().getFishingMemory().totalHarvestAmounts.get(agent.name) || 0;
+    // Get harvest information for all agents
+    const allAgentsHarvestInfo = (world.agents || []).map(a => {
+        const agentFishingMemory = a.getScratchMemory().getFishingMemory();
+        return {
+            name: a.name,
+            lastHarvest: agentFishingMemory.lastHarvestAmounts.get(a.name) || 0,
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+        };
+    });
 
-    console.log(`Lake State: ${JSON.stringify(lakeState, null, 2)}`);
-    console.log(`Last Harvest: ${lastHarvest}`);
-    console.log(`Total Harvest: ${totalHarvest}`);
+    // Format all agents' harvest information
+    const allAgentsHarvestText = allAgentsHarvestInfo
+        .map(info => `* ${info.name}:
+    - Last Harvest: ${info.lastHarvest} fish
+    - Total Harvest: ${info.totalHarvest} fish`)
+        .join('\n');
 
-    // Build message sections conditionally
-    let message = `You are ${agent.name}.\n${CORE_RULES(Constants)}\n\nLake State:\n${JSON.stringify(lakeState, null, 2)}\n\n`;
+    // Build message sections
+    let message = `You are ${agent.name}.\n${CORE_RULES(Constants)}\n\n`;
 
-    // Add last harvest if available
-    if (lastHarvest) {
-        message += `Your Last Harvest:\n${lastHarvest}\n\n`;
-    }
-
-    // Add total harvest if available
-    if (totalHarvest) {
-        message += `Your Total Harvest:\n${totalHarvest}\n\n`;
-    }
+    message += `Lake State:\n${JSON.stringify(lakeState, null, 2)}\n\n`;
+    message += `All Agents' Harvest Information:\n${allAgentsHarvestText}\n\n`;
 
     // Add reflection thoughts if available
     if (reflected) {
@@ -136,8 +140,24 @@ export function buildReflectUserMessage(agent: BaseAgent): string {
     const constants = Constants;
 
     const lakeState = agent.getCompleteState().game.lake;
-    const lastHarvest = agent.getScratchMemory().getFishingMemory().lastHarvestAmounts.get(agent.name) || 0;
-    const totalHarvest = agent.getScratchMemory().getFishingMemory().totalHarvestAmounts.get(agent.name) || 0;
+    const world = agent.getGameWorld();
+
+    // Get harvest information for all agents
+    const allAgentsHarvestInfo = (world.agents || []).map(a => {
+        const agentFishingMemory = a.getScratchMemory().getFishingMemory();
+        return {
+            name: a.name,
+            lastHarvest: agentFishingMemory.lastHarvestAmounts.get(a.name) || 0,
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+        };
+    });
+
+    // Format all agents' harvest information
+    const allAgentsHarvestText = allAgentsHarvestInfo
+        .map(info => `* ${info.name}:
+    - Last Harvest: ${info.lastHarvest} fish
+    - Total Harvest: ${info.totalHarvest} fish`)
+        .join('\n');
 
     const townhallHistory = agent.getScratchMemory().getTownhallHistory();
     const chatHistory = townhallHistory.messages.map(entry => `[${entry.agentName}]: ${entry.message}`).join('\n');
@@ -149,11 +169,8 @@ ${CORE_RULES(constants)}
 Lake State:
 ${JSON.stringify(lakeState, null, 2)}
 
-Your Last Harvest:
-${lastHarvest}
-
-Your Total Harvest:
-${totalHarvest}
+All Agents' Harvest Information:
+${allAgentsHarvestText}
 
 === Recent Townhall Discussion ===
 ${chatHistory}
@@ -222,19 +239,32 @@ Rules:
 }
 
 export function buildCommunicationUserPrompt(agent: BaseAgent, world: GameWorld, chatHistoryText: string, currentRetry: number = 0): ChatCompletionMessageParam {
-    const fishingMemory = agent.getScratchMemory().getFishingMemory();
-    const cycleHarvest = fishingMemory.harvestAmounts.get(agent.name) || 0;
-    const totalHarvest = fishingMemory.totalHarvestAmounts.get(agent.name) || 0;
     const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
     const lakeState = agent.getCompleteState().game.lake;
+
+    // Get harvest information for all agents
+    const allAgentsHarvestInfo = (world.agents || []).map(a => {
+        const agentFishingMemory = a.getScratchMemory().getFishingMemory();
+        return {
+            name: a.name,
+            recentHarvest: agentFishingMemory.harvestAmounts.get(a.name) || 0,
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+        };
+    });
+
+    // Format all agents' harvest information
+    const allAgentsHarvestText = allAgentsHarvestInfo
+        .map(info => `* ${info.name}:
+    - Recent Harvest: ${info.recentHarvest} fish
+    - Total Harvest: ${info.totalHarvest} fish`)
+        .join('\n');
 
     return {
         role: "user",
         content: `Here's your current state and the discussion:
 
-Your Harvest Information:
-* Current Cycle Harvest: ${cycleHarvest} fish
-* Total Harvest (all cycles): ${totalHarvest} fish
+All Agents' Harvest Information:
+${allAgentsHarvestText}
 
 ${fishingSequenceInfo}
 

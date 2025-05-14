@@ -142,21 +142,26 @@ export class FishingBehavior implements AgentBehavior {
 		const memory = agent.getScratchMemory();
 		const fishingMemory = memory.getFishingMemory();
 		
-		// Move current harvest amounts to last harvest amounts
+		// Create new maps to avoid reference issues
 		const newLastHarvestAmounts = new Map(fishingMemory.harvestAmounts);
+		const newHarvestAmounts = new Map();
+		const newTotalHarvestAmounts = new Map(fishingMemory.totalHarvestAmounts);
 		
 		// Log the state transition
 		console.log(`[FISHING] ${agent.name} cycle reset:`, {
 			cycle: world.currentCycle,
 			previousHarvest: Object.fromEntries(fishingMemory.harvestAmounts),
-			movingToLastHarvest: Object.fromEntries(newLastHarvestAmounts)
+			movingToLastHarvest: Object.fromEntries(newLastHarvestAmounts),
+			totalHarvest: Object.fromEntries(newTotalHarvestAmounts)
 		});
 
+		// Update the fishing state with new maps
 		this.updateFishingState(agent, world, {
-			...fishingMemory,
+			harvestAmounts: newHarvestAmounts,
 			lastHarvestAmounts: newLastHarvestAmounts,
-			harvestAmounts: new Map(), // Reset current harvest amounts
-			harvestingCompleted: false  // Reset completion status
+			totalHarvestAmounts: newTotalHarvestAmounts,
+			harvestingCompleted: false,
+			isFishing: false
 		});
 	}
 

@@ -112,23 +112,25 @@ startServer((world: World) => {
                 thoughtUpdateCount: FishingBehavior.lastThoughtUpdateTimes.size
             });
             
-            gameWorld.currentCycle++; // Increment cycle number
-            gameWorld.currentTick = 0; // Reset tick counter for new cycle
-            console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
-            
-            // Reset agent ticks and fishing-related states for the new cycle
+            // Reset fishing state for each agent before incrementing cycle
             gameWorld.agents.forEach(agent => {
-                agent.currentAgentTick = 0;
-                agent.plannedHarvestAmount = null; // Reset planned harvest amount
-                agent.lastActionTick = 0; // Reset last action tick
-                agent.lastReflectionTick = 0; // Reset last reflection tick
-                
-                // Reset fishing state for the new cycle
                 const fishingBehavior = agent.getBehaviors().find(b => b instanceof FishingBehavior) as FishingBehavior;
                 if (fishingBehavior) {
                     console.log(`[FISHING] Resetting state for agent ${agent.name}`);
                     fishingBehavior.resetPerCycleFishingState(agent, gameWorld);
                 }
+            });
+
+            gameWorld.currentCycle++; // Increment cycle number
+            gameWorld.currentTick = 0; // Reset tick counter for new cycle
+            console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
+            
+            // Reset agent ticks and other non-fishing states for the new cycle
+            gameWorld.agents.forEach(agent => {
+                agent.currentAgentTick = 0;
+                agent.plannedHarvestAmount = null; // Reset planned harvest amount
+                agent.lastActionTick = 0; // Reset last action tick
+                agent.lastReflectionTick = 0; // Reset last reflection tick
             });
 
             // Reset global fishing state
