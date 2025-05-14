@@ -16,6 +16,7 @@ export interface FishingState {
 	harvestAmounts: Map<string, number>;  // Current cycle harvest amounts
 	lastHarvestAmounts: Map<string, number>;  // Previous cycle harvest amounts
 	totalHarvestAmounts: Map<string, number>;  // Total harvest amounts across all cycles
+	cycleHarvestHistory: Map<number, Map<string, number>>;  // History of harvests by cycle number
 	isFishing: boolean;
 	harvestingCompleted: boolean;
 }
@@ -147,12 +148,20 @@ export class FishingBehavior implements AgentBehavior {
 		const newHarvestAmounts = new Map();
 		const newTotalHarvestAmounts = new Map(fishingMemory.totalHarvestAmounts);
 		
+		// Store current cycle's harvest in history before resetting
+		const currentCycleHarvests = new Map(fishingMemory.harvestAmounts);
+		const newCycleHistory = new Map(fishingMemory.cycleHarvestHistory);
+		if (currentCycleHarvests.size > 0) {
+			newCycleHistory.set(world.currentCycle, currentCycleHarvests);
+		}
+		
 		// Log the state transition
 		console.log(`[FISHING] ${agent.name} cycle reset:`, {
 			cycle: world.currentCycle,
 			previousHarvest: Object.fromEntries(fishingMemory.harvestAmounts),
 			movingToLastHarvest: Object.fromEntries(newLastHarvestAmounts),
-			totalHarvest: Object.fromEntries(newTotalHarvestAmounts)
+			totalHarvest: Object.fromEntries(newTotalHarvestAmounts),
+			cycleHistory: Object.fromEntries([...newCycleHistory].map(([cycle, harvests]) => [cycle, Object.fromEntries(harvests)]))
 		});
 
 		// Update the fishing state with new maps
@@ -160,6 +169,7 @@ export class FishingBehavior implements AgentBehavior {
 			harvestAmounts: newHarvestAmounts,
 			lastHarvestAmounts: newLastHarvestAmounts,
 			totalHarvestAmounts: newTotalHarvestAmounts,
+			cycleHarvestHistory: newCycleHistory,
 			harvestingCompleted: false,
 			isFishing: false
 		});

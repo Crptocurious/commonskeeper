@@ -38,6 +38,7 @@ export class ScratchMemory {
             harvestAmounts: new Map(),
             lastHarvestAmounts: new Map(),
             totalHarvestAmounts: new Map(),
+            cycleHarvestHistory: new Map(),
             isFishing: false,
             harvestingCompleted: false
         };

@@ -93,15 +93,38 @@ export function buildPlanUserMessage(agent: BaseAgent, options: ChatOptions, ref
         return {
             name: a.name,
             lastHarvest: agentFishingMemory.lastHarvestAmounts.get(a.name) || 0,
-            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0,
+            cycleHistory: Object.fromEntries([...agentFishingMemory.cycleHarvestHistory].map(([cycle, harvests]) => [
+                `Cycle ${cycle}`,
+                harvests.get(a.name) || 0
+            ]))
         };
     });
 
-    // Format all agents' harvest information
+    // Debug log for harvest information
+    // console.log(`[PLANNING PROMPT] Harvest Info for ${agent.name}:`, {
+    //     currentCycle: world.currentCycle,
+    //     allAgentsInfo: allAgentsHarvestInfo.map(info => ({
+    //         name: info.name,
+    //         lastHarvest: info.lastHarvest,
+    //         totalHarvest: info.totalHarvest,
+    //         cycleHistory: info.cycleHistory
+    //     }))
+    // });
+
+    // Format all agents' harvest information with cycle history
     const allAgentsHarvestText = allAgentsHarvestInfo
-        .map(info => `* ${info.name}:
+        .map(info => {
+            const cycleHistoryText = Object.entries(info.cycleHistory)
+                .map(([cycle, amount]) => `    - ${cycle}: ${amount} fish`)
+                .join('\n');
+            
+            return `* ${info.name}:
     - Last Harvest: ${info.lastHarvest} fish
-    - Total Harvest: ${info.totalHarvest} fish`)
+    - Total Harvest: ${info.totalHarvest} fish
+    - Harvest History by Cycle:
+${cycleHistoryText}`;
+        })
         .join('\n');
 
     // Build message sections
@@ -264,21 +287,44 @@ export function buildCommunicationUserPrompt(agent: BaseAgent, world: GameWorld,
     const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
     const lakeState = agent.getCompleteState().game.lake;
 
-    // Get harvest information for all agents
+    // Get harvest information for all agents with cycle history
     const allAgentsHarvestInfo = (world.agents || []).map(a => {
         const agentFishingMemory = a.getScratchMemory().getFishingMemory();
         return {
             name: a.name,
             recentHarvest: agentFishingMemory.harvestAmounts.get(a.name) || 0,
-            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0,
+            cycleHistory: Object.fromEntries([...agentFishingMemory.cycleHarvestHistory].map(([cycle, harvests]) => [
+                `Cycle ${cycle}`,
+                harvests.get(a.name) || 0
+            ]))
         };
     });
 
-    // Format all agents' harvest information
+    // Debug log for harvest information
+    // console.log(`[COMMUNICATION PROMPT] Harvest Info for ${agent.name}:`, {
+    //     currentCycle: world.currentCycle,
+    //     allAgentsInfo: allAgentsHarvestInfo.map(info => ({
+    //         name: info.name,
+    //         recentHarvest: info.recentHarvest,
+    //         totalHarvest: info.totalHarvest,
+    //         cycleHistory: info.cycleHistory
+    //     }))
+    // });
+
+    // Format all agents' harvest information with cycle history
     const allAgentsHarvestText = allAgentsHarvestInfo
-        .map(info => `* ${info.name}:
+        .map(info => {
+            const cycleHistoryText = Object.entries(info.cycleHistory)
+                .map(([cycle, amount]) => `    - ${cycle}: ${amount} fish`)
+                .join('\n');
+            
+            return `* ${info.name}:
     - Recent Harvest: ${info.recentHarvest} fish
-    - Total Harvest: ${info.totalHarvest} fish`)
+    - Total Harvest: ${info.totalHarvest} fish
+    - Harvest History by Cycle:
+${cycleHistoryText}`;
+        })
         .join('\n');
 
     return {
