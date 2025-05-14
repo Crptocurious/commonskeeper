@@ -90,6 +90,8 @@ export function buildPlanUserMessage(agent: BaseAgent, options: ChatOptions, ref
     const totalHarvest = agent.getScratchMemory().getFishingMemory().totalHarvestAmounts.get(agent.name) || 0;
 
     console.log(`Lake State: ${JSON.stringify(lakeState, null, 2)}`);
+    console.log(`Last Harvest: ${lastHarvest}`);
+    console.log(`Total Harvest: ${totalHarvest}`);
 
     // Build message sections conditionally
     let message = `You are ${agent.name}.\n${CORE_RULES(Constants)}\n\nLake State:\n${JSON.stringify(lakeState, null, 2)}\n\n`;

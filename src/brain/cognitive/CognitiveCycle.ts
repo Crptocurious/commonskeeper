@@ -62,6 +62,8 @@ export class CognitiveCycle {
             console.log(`${agent.name}: Performing reflection`);
             // Perform reflection
             const reflection = await this.reflect.reflect(agent);
+
+            console.log(`${agent.name}: Reflection: ${reflection}`);
             
             // Update last reflection time
             agent.updateLastReflectionTick(currentTick);
