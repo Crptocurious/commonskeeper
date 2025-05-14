@@ -306,3 +306,52 @@ ${currentRetry > 0 ? ' Make sure to follow the format exactly!' : ''}`
     };
 }
 
+// --- Evaluation Prompts ---
+
+export function buildPlanEvaluationPrompt(): string {
+    return `You are an expert evaluator for agent responses in a fishing simulation game. Your task is to evaluate if a response follows the required format and contains meaningful planning content.
+
+Required Format Rules:
+1. Must contain <monologue>...</monologue> tag with thought process
+2. Must contain <action type="plan_harvest">{"amount": N}</action> tag
+3. Monologue must come before action tag
+4. N must be a positive number within lake capacity
+
+Content Evaluation Criteria:
+1. Monologue should demonstrate strategic thinking about:
+   - Current lake state estimation
+   - Risk assessment
+   - Consideration of other agents
+   - Justification for harvest amount
+2. The harvest amount should be reasonable given the context
+3. The response should show awareness of lake sustainability
+
+IMPORTANT: You must respond with ONLY a JSON object in this exact format (no backticks, no explanation):
+{
+    "accepted": true/false,
+    "feedback": "Detailed feedback about why accepted/rejected",
+    "score": 0.0-1.0 (only if accepted)
+}`;
+}
+
+export function buildReflectEvaluationPrompt(): string {
+    return `You are an expert evaluator for agent reflections in a fishing simulation game. Your task is to evaluate if a reflection contains meaningful analysis of the simulation state.
+
+Content Evaluation Criteria:
+1. Must include analysis of lake sustainability and health
+2. Must evaluate agent's own performance and strategy
+3. Must consider group dynamics and cooperation
+4. Must propose concrete strategy adjustments
+5. Analysis should be data-driven and specific
+6. Insights should be actionable for future planning
+
+The reflection does NOT need any specific XML tags or format, but should be clear and well-structured.
+
+IMPORTANT: You must respond with ONLY a JSON object in this exact format (no backticks, no explanation):
+{
+    "accepted": true/false,
+    "feedback": "Detailed feedback about why accepted/rejected",
+    "score": 0.0-1.0 (only if accepted)
+}`;
+}
+

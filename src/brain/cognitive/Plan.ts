@@ -6,6 +6,7 @@ import { BaseLLM } from "../BaseLLM";
 import { buildPlanningPhaseSystemPrompt, buildPlanUserMessage } from "../../config/prompts";
 import type { GameWorld } from "../../types/GameState";
 import { UIService } from "../../services/UIService";
+import { PlanEvaluator } from "./eval";
 
 type MessageType = "Player" | "Environment" | "Agent";
 
@@ -25,10 +26,12 @@ export class Plan {
         timeoutId: ReturnType<typeof setTimeout>;
         options: ChatOptions;
     };
+    private evaluator: PlanEvaluator;
 
     constructor(systemPrompt: string) {
         this.systemPrompt = systemPrompt;
         this.llm = new BaseLLM();
+        this.evaluator = new PlanEvaluator(null as any, null as any); // Will be initialized with proper values during processing
     }
 
     public async chat(agent: BaseAgent, options: ChatOptions) {
@@ -72,10 +75,7 @@ export class Plan {
             const userMessage = buildPlanUserMessage(agent, options);
             const systemPrompt = buildPlanningPhaseSystemPrompt(this.systemPrompt, agent, agent.getGameWorld());
 
-            // console.log(`[${agent.name}] Planning Phase System Prompt:\n${systemPrompt}`);
-            // console.log(`[${agent.name}] Planning Phase User Message:\n${userMessage}`);
-
-            // Construct messages directly without separate convert function
+            // Construct messages
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: "system",
@@ -87,10 +87,32 @@ export class Plan {
                 }
             ];
 
+            // Initialize evaluator with current context
+            this.evaluator = new PlanEvaluator(agent, agent.getGameWorld());
+
+            // Generate response
             const response = await this.llm.generate(messages);
             if (!response) return;
 
-            console.log(`${agent.name} Response:`, response);
+            // Add response to messages for evaluation
+            messages.push({
+                role: "assistant",
+                content: response
+            });
+
+            // Evaluate response with retries
+            const evaluationResult = await this.evaluator.evaluateWithRetry(messages);
+            
+            if (!evaluationResult.accepted) {
+                console.log(`${agent.name} Response rejected:`, evaluationResult.feedback);
+                return;
+            }
+
+            if (evaluationResult.isLastAttempt) {
+                console.log(`${agent.name} Using last attempt response after ${evaluationResult.attempt} failed attempts`);
+            } else {
+                console.log(`${agent.name} Response accepted with score:`, evaluationResult.score);
+            }
 
             this.parseXmlResponse(agent, response);
         } catch (error) {
