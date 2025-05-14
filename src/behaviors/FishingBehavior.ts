@@ -32,15 +32,15 @@ export class FishingBehavior implements AgentBehavior {
 	private readonly PIER_LOCATION = new Vector3(LOCATIONS.pier.x, LOCATIONS.pier.y, LOCATIONS.pier.z);
 	private readonly FISHING_RANGE = SIMULATION_CONFIG.FISH_RANGE;
 	private lakeManager: Lake;
-	private static isFishing: boolean = false;  // Make this static to track across all instances
+	public static isFishing: boolean = false;  // Make this static to track across all instances
 	
 	// Static state to track fishing sequence and current agent
-	private static baseSequence: string[] = [];  // Store the original sequence
-	private static currentFishingIndex: number = 0;
-	private static lastFishingEndTime: number = 0;
+	public static baseSequence: string[] = [];  // Store the original sequence
+	public static currentFishingIndex: number = 0;
+	public static lastFishingEndTime: number = 0;
 	private static hasInitializedSequence: boolean = false;
-	private static lastThoughtUpdateTimes: Map<string, number> = new Map();
-	private static currentFishingPromise: Promise<void> | null = null;  // Add tracking for current fishing attempt
+	public static lastThoughtUpdateTimes: Map<string, number> = new Map();
+	public static currentFishingPromise: Promise<void> | null = null;  // Add tracking for current fishing attempt
 
 	private readonly THOUGHT_UPDATE_INTERVAL = TIME_CONFIG.TICKS_PER_SECOND * 10; // Update every 10 seconds
 	private readonly MIN_FISHING_DELAY = TIME_CONFIG.TICKS_PER_SECOND * 1; // 1 second minimum delay between fishing attempts
@@ -138,7 +138,7 @@ export class FishingBehavior implements AgentBehavior {
 		});
 	}
 
-	private resetPerCycleFishingState(agent: BaseAgent, world: GameWorld) {
+	public resetPerCycleFishingState(agent: BaseAgent, world: GameWorld) {
 		const memory = agent.getScratchMemory();
 		const fishingMemory = memory.getFishingMemory();
 		
@@ -174,21 +174,6 @@ export class FishingBehavior implements AgentBehavior {
 				harvestingCompleted: false
 			});
 			return;
-		}
-
-		// Reset states at the start of each cycle
-		if (world.currentTick === 0) {
-			FishingBehavior.currentFishingIndex = 0;  // Reset to start of sequence
-			// Only reset completion status for all agents
-			world.agents.forEach(agent => {
-				this.resetPerCycleFishingState(agent, world);
-			});
-			const nextCycleSequence = this.getCurrentCycleSequence(world);
-			console.log(`[FISHING] Starting cycle ${world.currentCycle}:`, {
-				baseSequence: FishingBehavior.baseSequence,
-				nextCycleSequence,
-				firstFisher: this.getCurrentFishingAgent(world)
-			});
 		}
 
 		// If in HARVESTING phase, manage fishing and update thoughts

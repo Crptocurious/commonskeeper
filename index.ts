@@ -21,6 +21,7 @@ import { MetricsTracker } from "./src/MetricsTracker";
 import { EVENT_COLLAPSE } from "./src/Lake";
 import type { GamePhase } from "./src/types/GameState";
 import { CommunicationBehavior } from "./src/behaviors/CommunicationBehavior";
+import { FishingBehavior } from "./src/behaviors/FishingBehavior";
 
 // Define the agent configurations
 
@@ -100,6 +101,17 @@ startServer((world: World) => {
         if (justCompletedCycle) {
             // Log end of cycle metrics *before* potential phase change / regeneration
             metricsTracker.cycleEnded(totalElapsedTicks);
+            
+            // Log current fishing state before reset
+            console.log(`[FISHING] Pre-cycle reset state:`, {
+                cycle: gameWorld.currentCycle,
+                isFishing: FishingBehavior.isFishing,
+                currentFishingIndex: FishingBehavior.currentFishingIndex,
+                hasPendingFishing: !!FishingBehavior.currentFishingPromise,
+                lastFishingEndTime: FishingBehavior.lastFishingEndTime,
+                thoughtUpdateCount: FishingBehavior.lastThoughtUpdateTimes.size
+            });
+            
             gameWorld.currentCycle++; // Increment cycle number
             gameWorld.currentTick = 0; // Reset tick counter for new cycle
             console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
@@ -110,6 +122,31 @@ startServer((world: World) => {
                 agent.plannedHarvestAmount = null; // Reset planned harvest amount
                 agent.lastActionTick = 0; // Reset last action tick
                 agent.lastReflectionTick = 0; // Reset last reflection tick
+                
+                // Reset fishing state for the new cycle
+                const fishingBehavior = agent.getBehaviors().find(b => b instanceof FishingBehavior) as FishingBehavior;
+                if (fishingBehavior) {
+                    console.log(`[FISHING] Resetting state for agent ${agent.name}`);
+                    fishingBehavior.resetPerCycleFishingState(agent, gameWorld);
+                }
+            });
+
+            // Reset global fishing state
+            console.log(`[FISHING] Resetting global fishing state for cycle ${gameWorld.currentCycle}`);
+            FishingBehavior.isFishing = false;
+            FishingBehavior.currentFishingIndex = 0;
+            FishingBehavior.currentFishingPromise = null;
+            FishingBehavior.lastFishingEndTime = 0;
+            FishingBehavior.lastThoughtUpdateTimes.clear();
+
+            // Log fishing state after reset
+            console.log(`[FISHING] Post-cycle reset state:`, {
+                cycle: gameWorld.currentCycle,
+                isFishing: FishingBehavior.isFishing,
+                currentFishingIndex: FishingBehavior.currentFishingIndex,
+                hasPendingFishing: !!FishingBehavior.currentFishingPromise,
+                lastFishingEndTime: FishingBehavior.lastFishingEndTime,
+                thoughtUpdateCount: FishingBehavior.lastThoughtUpdateTimes.size
             });
         }
 
@@ -118,7 +155,17 @@ startServer((world: World) => {
             const oldPhase = gameWorld.currentPhase;
             gameWorld.currentPhase = newPhase;
             UIService.sendPhaseUpdate(gameWorld);
-            console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Current Tick: ${gameWorld.currentTick}, Total Ticks: ${totalElapsedTicks}: Phase Change: ${oldPhase} -> ${newPhase} ---`);
+            
+            // Enhanced phase change logging with fishing state
+            console.log(`--- Cycle ${metricsTracker.getCurrentCycleNumber()}, Phase Change: ${oldPhase} -> ${newPhase} ---`, {
+                currentTick: gameWorld.currentTick,
+                totalTicks: totalElapsedTicks,
+                fishingState: {
+                    isFishing: FishingBehavior.isFishing,
+                    currentFishingIndex: FishingBehavior.currentFishingIndex,
+                    hasPendingFishing: !!FishingBehavior.currentFishingPromise
+                }
+            });
 
             // Record fish stock at the end of HARVESTING and DISCUSSION phases
             if (oldPhase === 'HARVESTING' || oldPhase === 'DISCUSSION') {
