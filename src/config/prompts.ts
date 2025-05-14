@@ -133,7 +133,29 @@ All these 4 tags must be used in correct order.`;
 
 export function buildReflectSystemPrompt(): string {
     // Same as before - focuses the task
-    return `You are an AI agent analyzing your performance and the simulation state in a fishing simulation. Your goal is long-term wealth (Total Fish Harvested) and lake sustainability. Focus on identifying trends, risks (especially collapse), opportunities for cooperation/efficiency, and potential strategy adjustments based ONLY on the provided state information. Provide concise, actionable insights.`;
+    return `You are an AI agent analyzing your performance and the simulation state in a fishing simulation. Your task is to perform a comprehensive analysis that will inform your next planning phase. Think critically about all aspects that could impact your decision-making.
+
+    Your analysis should be thorough yet focused on what YOU determine to be the most relevant factors for success. Consider:
+    
+    1. SITUATION ANALYSIS
+       Analyze any aspects of the current state that you believe are crucial for decision-making. Think about both obvious and subtle factors that could affect outcomes.
+    
+    2. INSIGHTS & PATTERNS
+       Identify any patterns, relationships, or insights you've discovered. Focus on what YOU find most significant, not just standard metrics.
+    
+    3. STRATEGIC EVALUATION
+       Evaluate the effectiveness of various strategies and approaches you observe. Consider both successful and failed approaches.
+    
+    4. ACTIONABLE CONCLUSIONS
+       Based on your analysis, what specific actions or strategies do you believe will be most effective? Support your conclusions with evidence from your analysis.
+
+    Remember:
+    - Think independently about what factors matter most
+    - Support your insights with concrete evidence from the data
+    - Focus on information that will directly impact your next decisions
+    - Consider both immediate actions and long-term implications
+    - Base analysis only on REPORTED data - never assume exact stock knowledge
+    - Quantify insights where it adds value to your analysis`;
 }
 
 export function buildReflectUserMessage(agent: BaseAgent): string {
@@ -179,7 +201,7 @@ ${chatHistory}
 1.  **Lake Sustainability Estimate:** Based on known rules (Capacity, Threshold, Regeneration) and the *reported* total harvest from the last cycle, estimate the lake's health and the risk level for collapse. **Do not assume you know the current exact stock.**
 2.  **Your Performance:** Your current Total Fish Harvested? Success in achieving planned harvest last cycle (compare plan to report)? Appropriateness of your previous plan(s) given the *reported* outcomes?
 3.  **Group Dynamics:** Evidence of cooperation (e.g., reports align with discussions, low reported harvests)? Competition (e.g., high reported harvests, disagreements)? Free-riding (e.g., mismatch between discussion and reports)?
-4.  **Strategy Adjustment:** Based on your estimated risk and group dynamics, suggest specific adjustments for your next PLANNING phase (e.g., "Estimate stock is low, plan to harvest only Z fish", "Propose a lower collective limit during Discussion", "Need to verify Agent Y's reports").
+4.  **Strategy Adjustment:** Based on your estimated risk and group dynamics, suggest specific adjustments for your next PLANNING phase (e.g., "Estimate stock is low, plan to harvest only Z fish", "Acting or Avoiding the consensus from discussions").
 
 Output only your reflection insights in points.`;
 }

@@ -26,7 +26,7 @@ export class CommunicationBehavior implements AgentBehavior {
     // Static method to reset shared history
     public static resetSharedHistory() {
         CommunicationBehavior.sharedHistory = {
-            messages: [],
+            messages: [], // Only reset messages when explicitly called, not between cycles
             isDiscussionInProgress: false,
             currentSpeakerIndex: 0,
             lastUpdateTick: 0
@@ -35,17 +35,36 @@ export class CommunicationBehavior implements AgentBehavior {
         console.log('[CommunicationBehavior] Shared history reset');
     }
 
+    // New method to initialize discussion state while preserving messages
+    public static initializeDiscussionState() {
+        const currentMessages = CommunicationBehavior.sharedHistory.messages;
+        CommunicationBehavior.sharedHistory = {
+            messages: currentMessages || [], // Preserve existing messages
+            isDiscussionInProgress: false,
+            currentSpeakerIndex: 0,
+            lastUpdateTick: 0
+        };
+        CommunicationBehavior.lastLoggedSpeaker = null;
+        console.log('[CommunicationBehavior] Discussion state initialized with', currentMessages.length, 'preserved messages');
+    }
+
+    // New method to get shared history
+    public static getSharedHistory(): TownhallHistory {
+        return CommunicationBehavior.sharedHistory;
+    }
+
     private syncTownhallHistoryToAllAgents(world: GameWorld, history: TownhallHistory) {
-        // Only log when discussion state changes
-        if (history.isDiscussionInProgress !== CommunicationBehavior.sharedHistory.isDiscussionInProgress ||
-            history.currentSpeakerIndex !== CommunicationBehavior.sharedHistory.currentSpeakerIndex) {
-            console.log(`[CommunicationBehavior] Discussion state updated:`, {
-                isDiscussionInProgress: history.isDiscussionInProgress,
-                currentSpeakerIndex: history.currentSpeakerIndex,
-                messageCount: history.messages.length,
-                lastUpdateTick: history.lastUpdateTick
-            });
-        }
+        // Log sync operation
+        // console.log(`[CHAT_HISTORY] Syncing townhall history:`, {
+        //     messageCount: history.messages.length,
+        //     cycleDistribution: history.messages.reduce((acc, msg) => {
+        //         acc[msg.cycle] = (acc[msg.cycle] || 0) + 1;
+        //         return acc;
+        //     }, {} as Record<number, number>),
+        //     isDiscussionInProgress: history.isDiscussionInProgress,
+        //     currentSpeakerIndex: history.currentSpeakerIndex,
+        //     lastUpdateTick: history.lastUpdateTick
+        // });
 
         // Update shared history first
         CommunicationBehavior.sharedHistory = {
@@ -119,12 +138,32 @@ export class CommunicationBehavior implements AgentBehavior {
         // Use shared history as source of truth
         const townhallHistory = CommunicationBehavior.sharedHistory;
         
-        // Prepare chat history for the prompt
+        // Prepare chat history for the prompt, now with cycle numbers
+        let lastCycle = -1;
         const chatHistoryText = townhallHistory.messages
-            .map(entry => `[${entry.agentName}]: ${entry.message}`)
+            .map(entry => {
+                // Add cycle separator when cycle changes
+                let cycleHeader = '';
+                if (entry.cycle !== lastCycle) {
+                    cycleHeader = `\n=== Cycle ${entry.cycle} ===\n`;
+                    lastCycle = entry.cycle;
+                }
+                return `${cycleHeader}[${entry.agentName}]: ${entry.message}`;
+            })
             .join('\n');
 
-        console.log(`[CommunicationBehavior] ${agent.name} considering chat history:`, chatHistoryText);
+        // Log chat history for verification
+        console.log(`[CHAT_HISTORY] Current chat history for ${agent.name} (Cycle ${world.currentCycle}):`);
+        console.log('----------------------------------------');
+        console.log(chatHistoryText || '[No messages yet]');
+        console.log('----------------------------------------');
+        console.log(`Total messages: ${townhallHistory.messages.length}`);
+        console.log(`Messages by cycle:`, 
+            townhallHistory.messages.reduce((acc, msg) => {
+                acc[msg.cycle] = (acc[msg.cycle] || 0) + 1;
+                return acc;
+            }, {} as Record<number, number>)
+        );
 
         // Maximum retry attempts
         const MAX_RETRIES = 2;
@@ -205,14 +244,21 @@ export class CommunicationBehavior implements AgentBehavior {
         // Process speak
         const message = speakMatch[1].trim();
         if (message) {
-            console.log(`[CommunicationBehavior] ${agent.name} speaking:`, message);
-            
-            // Create new chat history entry
+            // Create new chat history entry with cycle number
             const entry: ChatHistoryEntry = {
                 agentName: agent.name,
                 message,
-                tick: agent.currentAgentTick
+                tick: agent.currentAgentTick,
+                cycle: world.currentCycle
             };
+
+            // Log new message being added
+            // console.log(`[CHAT_HISTORY] Adding new message:`, {
+            //     agent: entry.agentName,
+            //     cycle: entry.cycle,
+            //     tick: entry.tick,
+            //     messagePreview: entry.message.substring(0, 50) + (entry.message.length > 50 ? '...' : '')
+            // });
 
             // Update shared history with new message
             const updatedHistory: TownhallHistory = {
@@ -255,7 +301,7 @@ export class CommunicationBehavior implements AgentBehavior {
         const nextSpeakerIndex = (townhallHistory.currentSpeakerIndex + 1) % allAgents.length;
         const isRoundComplete = nextSpeakerIndex === 0;
 
-        console.log(`[CommunicationBehavior] Turn ended - Next speaker index: ${nextSpeakerIndex}, Round complete: ${isRoundComplete}`);
+        // console.log(`[CommunicationBehavior] Turn ended - Next speaker index: ${nextSpeakerIndex}, Round complete: ${isRoundComplete}`);
 
         // Update townhall history: turn off discussion in progress and update speaker
         const updatedHistory: TownhallHistory = {

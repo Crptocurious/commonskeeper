@@ -183,15 +183,12 @@ startServer((world: World) => {
             }
 
             if (newPhase === 'DISCUSSION') {
-                // Reset townhall history for new cycle
-                CommunicationBehavior.resetSharedHistory(); // Reset the shared history first
+                // Initialize discussion state while preserving messages
+                CommunicationBehavior.initializeDiscussionState();
+                
+                // Sync the state to all agents
                 gameWorld.agents.forEach(agent => {
-                    agent.getScratchMemory().updateTownhallHistory({
-                        messages: [],
-                        isDiscussionInProgress: false,
-                        currentSpeakerIndex: 0,
-                        lastUpdateTick: 0
-                    });
+                    agent.getScratchMemory().updateTownhallHistory(CommunicationBehavior.getSharedHistory());
                 });
             }
         }

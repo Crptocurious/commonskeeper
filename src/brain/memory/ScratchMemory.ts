@@ -6,6 +6,7 @@ export interface ChatHistoryEntry {
     agentName: string;
     message: string;
     tick: number;
+    cycle: number;
 }
 
 export interface TownhallHistory {
