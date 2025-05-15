@@ -19,6 +19,7 @@ interface SimulationMetricsReport {
     fish_stock_time_series: { tick: number; stock: number }[];
     total_harvest_per_cycle_time_series: { cycle: number; harvest: number }[];
     townhall_messages_per_cycle_time_series: { cycle: number; messages: number }[];
+    simulation_console_logs: string[]; // New field for console logs
 }
 
 // Helper function to calculate the Gini coefficient
@@ -114,13 +115,47 @@ export class MetricsTracker {
     private greedyMovesCount: number = 0;
     private totalHarvestActionsCount: number = 0;
 
+    // To store console logs
+    private consoleLogs: string[] = [];
+
+    // To store original console methods
+    private originalConsoleLog: (...data: any[]) => void;
+    private originalConsoleWarn: (...data: any[]) => void;
+    private originalConsoleError: (...data: any[]) => void;
+
 
     constructor(runIdPrefix: string = "sim", configuredDurationTicks: number) {
         this.runId = `${runIdPrefix}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
         this.simulationStartTime = 0; // Will be set when simulation starts
         this.totalSimulationDurationTicks = configuredDurationTicks;
         this.reportGenerated = false; // Initialize flag
-        console.log(`Metrics Tracker initialized for run: ${this.runId}`);
+        console.log(`Metrics Tracker initialized for run: ${this.runId}`); // This initial log won't be captured by the new mechanism unless we move it
+
+        // Store original console methods
+        this.originalConsoleLog = console.log.bind(console);
+        this.originalConsoleWarn = console.warn.bind(console);
+        this.originalConsoleError = console.error.bind(console);
+
+        // Override console methods
+        console.log = (...args: any[]) => {
+            const message = args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ');
+            this.consoleLogs.push(`${new Date().toISOString()} [LOG]: ${message}`);
+            this.originalConsoleLog(...args);
+        };
+        console.warn = (...args: any[]) => {
+            const message = args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ');
+            this.consoleLogs.push(`${new Date().toISOString()} [WARN]: ${message}`);
+            this.originalConsoleWarn(...args);
+        };
+        console.error = (...args: any[]) => {
+            const message = args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ');
+            this.consoleLogs.push(`${new Date().toISOString()} [ERROR]: ${message}`);
+            this.originalConsoleError(...args);
+        };
+        
+        // Now that console.log is overridden, this log *will* be captured.
+        // We might want to use originalConsoleLog for internal MetricsTracker logs if they shouldn't pollute the report.
+        this.originalConsoleLog(`Metrics Tracker initialized and console methods overridden for run: ${this.runId}`);
     }
 
     // --- Event Handlers / Update Methods ---
@@ -233,6 +268,11 @@ export class MetricsTracker {
         }
     }
 
+    public recordLogMessage(message: string): void {
+        const timestampedMessage = `${new Date().toISOString()} [CUSTOM_LOG]: ${message}`;
+        this.consoleLogs.push(timestampedMessage);
+        this.originalConsoleLog(`[CUSTOM_LOG]: ${message}`); // Use original to avoid double capture by overridden console.log
+    }
 
     // --- Calculation Methods ---
 
@@ -284,16 +324,16 @@ export class MetricsTracker {
         // Calculate total wealth generated
         const totalWealthGenerated = Array.from(this.totalHarvestPerAgent.values()).reduce((sum, current) => sum + current, 0);
 
-        // Prepare total gain per agent for the report
+        // Prepare total gain per agent for the report and log it
         const totalGainPerAgentReport: { [agentName: string]: number } = {};
-        console.log("\n--- Simulation End: Total Gain per Agent (R_i) ---");
+        this.recordLogMessage("--- Simulation End: Total Gain per Agent (R_i) ---");
         for (const [agentName, totalGain] of this.totalHarvestPerAgent.entries()) {
             totalGainPerAgentReport[agentName] = totalGain;
-            console.log(`${agentName}: ${totalGain} fish`);
+            this.recordLogMessage(`${agentName}: ${totalGain} fish`);
         }
         const averageGain = this.totalHarvestPerAgent.size > 0 ? totalWealthGenerated / this.totalHarvestPerAgent.size : 0;
-        console.log(`Average Gain per Agent: ${averageGain.toFixed(2)} fish`);
-        console.log("-----------------------------------------------------\n");
+        this.recordLogMessage(`Average Gain per Agent: ${averageGain.toFixed(2)} fish`);
+        this.recordLogMessage("-----------------------------------------------------");
 
 
         const report: SimulationMetricsReport = {
@@ -311,6 +351,7 @@ export class MetricsTracker {
             fish_stock_time_series: this.fishStockTimeSeries,
             total_harvest_per_cycle_time_series: this.totalHarvestPerCycleTimeSeries,
             townhall_messages_per_cycle_time_series: this.townhallMessagesPerCycleTimeSeries,
+            simulation_console_logs: this.consoleLogs, // Add captured logs
         };
 
         const reportJson = JSON.stringify(report, null, 2); // Pretty print JSON
