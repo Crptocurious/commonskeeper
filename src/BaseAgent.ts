@@ -102,7 +102,7 @@ export class BaseAgent extends Entity {
 
 				// Trigger planning logic when entering the PLANNING phase
 				if (this.currentAgentPhase === 'PLANNING') {
-					this.handleEnvironmentTrigger("The PLANNING phase has begun. Review the situation and decide your harvest plan.");
+					// this.handleEnvironmentTrigger("The PLANNING phase has begun. Review the situation and decide your harvest plan.");
 					this.lastActionTick = this.currentAgentTick; // Reset action timer after planning trigger
 				}
 			}

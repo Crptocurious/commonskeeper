@@ -112,6 +112,8 @@ export function buildPlanUserMessage(agent: BaseAgent, options: ChatOptions, ref
     //     }))
     // });
 
+    console.log(`[REFLECTION IN PLANNING PROMPT]`, options.message);
+
     // Format all agents' harvest information with cycle history
     const allAgentsHarvestText = allAgentsHarvestInfo
         .map(info => {

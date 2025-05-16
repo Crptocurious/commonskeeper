@@ -69,7 +69,7 @@ export class Plan {
     }
 
     private async processChatMessage(agent: BaseAgent, options: ChatOptions) {
-        const { type, message, player, agent: sourceAgent } = options;
+        // const { type, message, player, agent: sourceAgent } = options;
         try {
             // Build prompt with complete state
             const userMessage = buildPlanUserMessage(agent, options);
