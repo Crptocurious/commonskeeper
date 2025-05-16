@@ -153,17 +153,17 @@ export class CommunicationBehavior implements AgentBehavior {
             .join('\n');
 
         // Log chat history for verification
-        console.log(`[CHAT_HISTORY] Current chat history for ${agent.name} (Cycle ${world.currentCycle}):`);
-        console.log('----------------------------------------');
-        console.log(chatHistoryText || '[No messages yet]');
-        console.log('----------------------------------------');
-        console.log(`Total messages: ${townhallHistory.messages.length}`);
-        console.log(`Messages by cycle:`, 
-            townhallHistory.messages.reduce((acc, msg) => {
-                acc[msg.cycle] = (acc[msg.cycle] || 0) + 1;
-                return acc;
-            }, {} as Record<number, number>)
-        );
+        // console.log(`[CHAT_HISTORY] Current chat history for ${agent.name} (Cycle ${world.currentCycle}):`);
+        // console.log('----------------------------------------');
+        // console.log(chatHistoryText || '[No messages yet]');
+        // console.log('----------------------------------------');
+        // console.log(`Total messages: ${townhallHistory.messages.length}`);
+        // console.log(`Messages by cycle:`, 
+        //     townhallHistory.messages.reduce((acc, msg) => {
+        //         acc[msg.cycle] = (acc[msg.cycle] || 0) + 1;
+        //         return acc;
+        //     }, {} as Record<number, number>)
+        // );
 
         // Maximum retry attempts
         const MAX_RETRIES = 2;

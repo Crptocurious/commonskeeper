@@ -181,31 +181,78 @@ export function buildReflectSystemPrompt(): string {
     - Quantify insights where it adds value to your analysis`;
 }
 
-export function buildReflectUserMessage(agent: BaseAgent): string {
-    const constants = Constants;
-
-    const lakeState = agent.getCompleteState().game.lake;
-    const world = agent.getGameWorld();
-
-    // Get harvest information for all agents
-    const allAgentsHarvestInfo = (world.agents || []).map(a => {
+// Helper function to build combined history text of harvests and discussions
+function buildCombinedHistoryText(world: GameWorld, agents: BaseAgent[]): string {
+    // Get harvest information for all agents with cycle history
+    const allAgentsHarvestInfo = (agents || []).map(a => {
         const agentFishingMemory = a.getScratchMemory().getFishingMemory();
+        
+        // Create a combined history that includes both historical and current cycle harvests
+        const combinedHistory = new Map(agentFishingMemory.cycleHarvestHistory);
+        
+        // Add current cycle's harvests to the history if they exist
+        const currentHarvests = agentFishingMemory.harvestAmounts;
+        if (currentHarvests.size > 0) {
+            combinedHistory.set(world.currentCycle, currentHarvests);
+        }
+        
         return {
             name: a.name,
-            lastHarvest: agentFishingMemory.lastHarvestAmounts.get(a.name) || 0,
-            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0
+            recentHarvest: agentFishingMemory.harvestAmounts.get(a.name) || 0,
+            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0,
+            cycleHistory: Object.fromEntries([...combinedHistory].map(([cycle, harvests]) => [
+                cycle,
+                harvests.get(a.name) || 0
+            ]))
         };
     });
 
-    // Format all agents' harvest information
-    const allAgentsHarvestText = allAgentsHarvestInfo
-        .map(info => `* ${info.name}:
-    - Last Harvest: ${info.lastHarvest} fish
-    - Total Harvest: ${info.totalHarvest} fish`)
-        .join('\n');
+    // Get the townhall history from any agent (they all share the same history)
+    const townhallHistory = agents[0]?.getScratchMemory().getTownhallHistory();
+    
+    // Organize messages by cycle
+    const messagesByCycle = new Map<number, string[]>();
+    if (townhallHistory) {
+        townhallHistory.messages.forEach(entry => {
+            const cycle = entry.cycle || 0;
+            if (!messagesByCycle.has(cycle)) {
+                messagesByCycle.set(cycle, []);
+            }
+            messagesByCycle.get(cycle)?.push(`[${entry.agentName}]: ${entry.message}`);
+        });
+    }
 
-    const townhallHistory = agent.getScratchMemory().getTownhallHistory();
-    const chatHistory = townhallHistory.messages.map(entry => `[${entry.agentName}]: ${entry.message}`).join('\n');
+    // Combine harvest and discussion history by cycle
+    const cycles = new Set([
+        ...Array.from(messagesByCycle.keys()),
+        ...allAgentsHarvestInfo.flatMap(info => Object.keys(info.cycleHistory)).map(Number)
+    ]);
+
+    return Array.from(cycles)
+        .sort((a, b) => a - b)
+        .map(cycle => {
+            const cycleHarvestText = allAgentsHarvestInfo
+                .map(info => {
+                    const harvestAmount = info.cycleHistory[cycle] || 0;
+                    return `    - ${info.name}: ${harvestAmount} fish`;
+                })
+                .join('\n');
+
+            const cycleDiscussionText = (messagesByCycle.get(cycle) || []).join('\n');
+
+            return `Cycle ${cycle} Harvest Details:\n${cycleHarvestText}\n\nCycle ${cycle} After-Harvest Discussion:\n${cycleDiscussionText || '    No discussion recorded'}`;
+        })
+        .join('\n\n');
+}
+
+export function buildReflectUserMessage(agent: BaseAgent): string {
+    const constants = Constants;
+    const lakeState = agent.getCompleteState().game.lake;
+    const world = agent.getGameWorld();
+
+    const combinedHistoryText = buildCombinedHistoryText(world, world.agents || []);
+
+    console.log(`[REFLECTION history text]`, combinedHistoryText);
 
     return `You are ${agent.name}.
 
@@ -214,11 +261,8 @@ ${CORE_RULES(constants)}
 Lake State:
 ${JSON.stringify(lakeState, null, 2)}
 
-All Agents' Harvest Information:
-${allAgentsHarvestText}
-
-=== Recent Townhall Discussion ===
-${chatHistory}
+Historical Progression by Cycle:
+${combinedHistoryText}
 
 **Reflection Task:** Analyze the available information. Provide concise insights regarding:
 1.  **Lake Sustainability Estimate:** Based on known rules (Capacity, Threshold, Regeneration) and the *reported* total harvest from the last cycle, estimate the lake's health and the risk level for collapse. **Do not assume you know the current exact stock.**
@@ -287,61 +331,21 @@ export function buildCommunicationUserPrompt(agent: BaseAgent, world: GameWorld,
     const fishingSequenceInfo = getFishingSequenceInfo(agent, world);
     const lakeState = agent.getCompleteState().game.lake;
 
-    // Get harvest information for all agents with cycle history
-    const allAgentsHarvestInfo = (world.agents || []).map(a => {
-        const agentFishingMemory = a.getScratchMemory().getFishingMemory();
-        return {
-            name: a.name,
-            recentHarvest: agentFishingMemory.harvestAmounts.get(a.name) || 0,
-            totalHarvest: agentFishingMemory.totalHarvestAmounts.get(a.name) || 0,
-            cycleHistory: Object.fromEntries([...agentFishingMemory.cycleHarvestHistory].map(([cycle, harvests]) => [
-                `Cycle ${cycle}`,
-                harvests.get(a.name) || 0
-            ]))
-        };
-    });
+    const combinedHistoryText = buildCombinedHistoryText(world, world.agents || []);
 
-    // Debug log for harvest information
-    // console.log(`[COMMUNICATION PROMPT] Harvest Info for ${agent.name}:`, {
-    //     currentCycle: world.currentCycle,
-    //     allAgentsInfo: allAgentsHarvestInfo.map(info => ({
-    //         name: info.name,
-    //         recentHarvest: info.recentHarvest,
-    //         totalHarvest: info.totalHarvest,
-    //         cycleHistory: info.cycleHistory
-    //     }))
-    // });
-
-    // Format all agents' harvest information with cycle history
-    const allAgentsHarvestText = allAgentsHarvestInfo
-        .map(info => {
-            const cycleHistoryText = Object.entries(info.cycleHistory)
-                .map(([cycle, amount]) => `    - ${cycle}: ${amount} fish`)
-                .join('\n');
-            
-            return `* ${info.name}:
-    - Recent Harvest: ${info.recentHarvest} fish
-    - Total Harvest: ${info.totalHarvest} fish
-    - Harvest History by Cycle:
-${cycleHistoryText}`;
-        })
-        .join('\n');
+    console.log(`[Combined history text]`, combinedHistoryText);
 
     return {
         role: "user",
-        content: `Here's your current state and the discussion:
-
-All Agents' Harvest Information:
-${allAgentsHarvestText}
+        content: `Here's your current state and the historical progression:
 
 ${fishingSequenceInfo}
 
 Lake State:
 ${JSON.stringify(lakeState, null, 2)}
-You must consider the current lake state and possible lake re-generation when discussing with other agents.
 
-Current Discussion:
-${chatHistoryText}
+Historical Progression by Cycle:
+${combinedHistoryText}
 
 It's your turn to speak. Respond using the required format with both <monologue> and <speak> tags.
 Example of correct format:
