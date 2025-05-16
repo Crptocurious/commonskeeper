@@ -53,16 +53,16 @@ export const LOCATIONS = {
 };
 
 export const enum AgentName {
-    JOHN = "John",
-    KATE = "Kate",
+    OGGY = "Oggy",
+    BOB = "Bob",
     JACK = "Jack"
 }
 
 export const SPAWN_LOCATIONS = {
     player: { x: 29, y: 3, z: 59 },
     agents: {
-        [AgentName.JOHN]: { x: 30, y: 3, z: 55 },
-        [AgentName.KATE]: { x: 33, y: 3, z: 56 },
+        [AgentName.OGGY]: { x: 30, y: 3, z: 55 },
+        [AgentName.BOB]: { x: 33, y: 3, z: 56 },
         [AgentName.JACK]: { x: 28, y: 3, z: 57 }
     }
 };
@@ -79,23 +79,23 @@ export const FISHERMAN_BEHAVIOR_CONFIGS: BehaviorConfig[] = [
 // Agent-specific configurations
 export const AGENT_CONFIGS = [
     {
-        name: AgentName.JOHN,
-        systemPrompt: buildCommonAgentPrompt(AgentName.JOHN),
+        name: AgentName.OGGY,
+        systemPrompt: buildCommonAgentPrompt(AgentName.OGGY),
         behaviorConfigs: FISHERMAN_BEHAVIOR_CONFIGS,
         spawnLocation: new Vector3(
-            SPAWN_LOCATIONS.agents[AgentName.JOHN].x,
-            SPAWN_LOCATIONS.agents[AgentName.JOHN].y,
-            SPAWN_LOCATIONS.agents[AgentName.JOHN].z
+            SPAWN_LOCATIONS.agents[AgentName.OGGY].x,
+            SPAWN_LOCATIONS.agents[AgentName.OGGY].y,
+            SPAWN_LOCATIONS.agents[AgentName.OGGY].z
         )
     },
     {
-        name: AgentName.KATE,
-        systemPrompt: buildCommonAgentPrompt(AgentName.KATE),
+        name: AgentName.BOB,
+        systemPrompt: buildCommonAgentPrompt(AgentName.BOB),
         behaviorConfigs: FISHERMAN_BEHAVIOR_CONFIGS,
         spawnLocation: new Vector3(
-            SPAWN_LOCATIONS.agents[AgentName.KATE].x,
-            SPAWN_LOCATIONS.agents[AgentName.KATE].y,
-            SPAWN_LOCATIONS.agents[AgentName.KATE].z
+            SPAWN_LOCATIONS.agents[AgentName.BOB].x,
+            SPAWN_LOCATIONS.agents[AgentName.BOB].y,
+            SPAWN_LOCATIONS.agents[AgentName.BOB].z
         )
     },
     {
