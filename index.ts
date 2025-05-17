@@ -37,6 +37,9 @@ startServer((world: World) => {
     gameWorld.agents = []; // Initialize agents array on gameWorld
     let totalElapsedTicks = 0; // Track total ticks for simulation end
 
+    // Add a phase tick counter to track ticks within the current phase
+    let phaseTickCounter = 0; // Resets to 0 whenever the phase changes or a new cycle starts
+
     // --- Initialize Lake ---
     const lake = new Lake(
         SIMULATION_CONFIG.LAKE_CAPACITY,
@@ -82,24 +85,48 @@ startServer((world: World) => {
         // Increment ticks
         totalElapsedTicks++;
         gameWorld.currentTick++;
+        phaseTickCounter++; // track ticks spent in the current phase
 
-        // Determine current phase based on ticks within the cycle
-        const totalCycleTicks = DERIVED_TIME_CONFIG.totalCycleTicks;
-        let newPhase: GamePhase;
-        const ticksInCurrentCycle = gameWorld.currentTick % totalCycleTicks; // Use modulo for current position in cycle
+        // ---------------------------
+        // Task-driven phase handling
+        // ---------------------------
+        let newPhase: GamePhase = gameWorld.currentPhase;
 
-        if (ticksInCurrentCycle < DERIVED_TIME_CONFIG.planningDurationTicks) {
-            newPhase = 'PLANNING';
-        } else if (ticksInCurrentCycle < DERIVED_TIME_CONFIG.planningDurationTicks + DERIVED_TIME_CONFIG.harvestingDurationTicks) {
-            newPhase = 'HARVESTING';
-        } else {
-            newPhase = 'DISCUSSION';
+        switch (gameWorld.currentPhase) {
+            case 'PLANNING': {
+                const everyAgentPlanned = gameWorld.agents.length > 0 &&
+                    gameWorld.agents.every(agent => agent.plannedHarvestAmount !== null);
+                if (everyAgentPlanned) {
+                    newPhase = 'HARVESTING';
+                }
+                break;
+            }
+            case 'HARVESTING': {
+                // Harvesting completes once every agent marks their harvesting as completed.
+                const everyAgentFinished = gameWorld.agents.length > 0 &&
+                    gameWorld.agents.every(agent => agent.getScratchMemory().getFishingMemory().harvestingCompleted);
+
+                // Additionally, ensure no one is actively fishing or in the middle of a pending fishing promise.
+                const noActiveFishing = !FishingBehavior.isFishing && !FishingBehavior.currentFishingPromise;
+
+                if (everyAgentFinished && noActiveFishing) {
+                    newPhase = 'DISCUSSION';
+                }
+                break;
+            }
+            case 'DISCUSSION': {
+                // Discussion remains time-bound, using the existing constant.
+                if (phaseTickCounter >= DERIVED_TIME_CONFIG.discussionDurationTicks) {
+                    newPhase = 'PLANNING';
+                }
+                break;
+            }
         }
 
         // Detect cycle end (transition from Discussion back to Planning)
-        const justCompletedCycle = gameWorld.currentTick > 0 && gameWorld.currentTick % totalCycleTicks === 0;
+        const justCompletedCycle = gameWorld.currentPhase === 'DISCUSSION' && newPhase === 'PLANNING';
         if (justCompletedCycle) {
-            // Log end of cycle metrics *before* potential phase change / regeneration
+            // Log end of cycle metrics *before* resets / regeneration
             metricsTracker.cycleEnded(totalElapsedTicks);
             
             // Log current fishing state before reset
@@ -123,6 +150,7 @@ startServer((world: World) => {
 
             gameWorld.currentCycle++; // Increment cycle number
             gameWorld.currentTick = 0; // Reset tick counter for new cycle
+            phaseTickCounter = 0;      // Reset phase tick counter for new cycle
             console.log(`--- Starting Cycle ${gameWorld.currentCycle} ---`);
             
             // Reset agent ticks and other non-fishing states for the new cycle
@@ -152,10 +180,13 @@ startServer((world: World) => {
             });
         }
 
-        // Phase Change Logic
+        // ---------------------------
+        // Phase change side-effects
+        // ---------------------------
         if (newPhase !== gameWorld.currentPhase) {
             const oldPhase = gameWorld.currentPhase;
             gameWorld.currentPhase = newPhase;
+            phaseTickCounter = 0; // reset counter whenever we enter a new phase
             UIService.sendPhaseUpdate(gameWorld);
             
             // Enhanced phase change logging with fishing state
@@ -193,9 +224,8 @@ startServer((world: World) => {
             }
         }
 
-        // Note: We no longer reset gameWorld.currentTick to 0 within the loop.
-        // totalElapsedTicks tracks total time, and (gameWorld.currentTick % totalCycleTicks) determines phase.
-        // Simulation end condition handles stopping.
+        // Note: gameWorld.currentTick now resets only when a cycle ends.
+        // totalElapsedTicks tracks absolute simulation time.
 
 	}, 1000 / TIME_CONFIG.TICKS_PER_SECOND);
     
